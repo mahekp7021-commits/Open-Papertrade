@@ -11,6 +11,7 @@ from . import backtesting_views
 from . import coaching_views
 from . import copy_trading_views
 from . import training_views
+from . import forex_views
 
 app_name = 'users'
 
@@ -21,6 +22,11 @@ urlpatterns = [
     path('training/accounts/<int:account_id>/notes/', training_views.TrainingNotesView.as_view(), name='training-account-notes'),
     path('training/accounts/<int:account_id>/trades/', training_views.TrainingAccountTradesView.as_view(), name='training-account-trades'),
     path('training/accounts/<int:account_id>/trades/execute/', training_views.ManagerDemoTradeView.as_view(), name='training-manager-demo-trade'),
+    # Manager-only forex demo engine (USD-quoted pairs, virtual funds only)
+    path('training/accounts/<int:account_id>/forex/snapshot/', forex_views.ForexAccountSnapshotView.as_view(), name='training-forex-snapshot'),
+    path('training/accounts/<int:account_id>/forex/positions/', forex_views.ForexPositionListView.as_view(), name='training-forex-positions'),
+    path('training/accounts/<int:account_id>/forex/open/', forex_views.ForexOpenPositionView.as_view(), name='training-forex-open'),
+    path('training/accounts/<int:account_id>/forex/positions/<int:position_id>/close/', forex_views.ForexClosePositionView.as_view(), name='training-forex-close'),
     # Profile
     path('profile/', views.UserProfileView.as_view(), name='profile'),
     path('profile/avatar/', views.AvatarUploadView.as_view(), name='avatar-upload'),
