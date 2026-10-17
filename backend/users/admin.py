@@ -11,7 +11,7 @@ from unfold.decorators import display, action
 from .models import (
     UserProfile, UserSettings, Achievement, UserAchievement,
     Trade, Holding, Watchlist, PriceAlert, SiteSettings, APIKey, LimitOrder,
-    Strategy, Backtest,
+    Strategy, Backtest, TrainingAccount, TrainerTradingConfig, TrainingNote, TrainingAuditEvent,
 )
 from .email_service import send_test_email
 from .report_views import compute_weekly_report, compute_monthly_report, compute_yearly_report
@@ -374,3 +374,47 @@ class BacktestAdmin(ModelAdmin):
     search_fields = ("strategy_name", "symbol", "owner__username", "owner__email")
     readonly_fields = ("created_at", "results", "config_snapshot")
     date_hierarchy = "created_at"
+
+
+@admin.register(TrainingAccount)
+class TrainingAccountAdmin(ModelAdmin):
+    list_display = ['user', 'role', 'is_enabled', 'created_by', 'created_at']
+    list_filter = ['role', 'is_enabled', 'created_at']
+    search_fields = ['user__name', 'user__username', 'user__email']
+    autocomplete_fields = ['user', 'created_by']
+    readonly_fields = ['created_at', 'updated_at']
+
+
+@admin.register(TrainerTradingConfig)
+class TrainerTradingConfigAdmin(ModelAdmin):
+    list_display = ['account', 'leverage', 'spread_pips', 'margin_call_level_percent', 'stop_out_level_percent', 'updated_at']
+    search_fields = ['account__user__name', 'account__user__username', 'account__user__email']
+    autocomplete_fields = ['account']
+    readonly_fields = ['updated_at']
+
+
+@admin.register(TrainingNote)
+class TrainingNoteAdmin(ModelAdmin):
+    list_display = ['title', 'account', 'category', 'author', 'created_at']
+    list_filter = ['category', 'created_at']
+    search_fields = ['title', 'body', 'account__user__name', 'account__user__username']
+    autocomplete_fields = ['account', 'author', 'trade']
+    readonly_fields = ['created_at']
+
+
+@admin.register(TrainingAuditEvent)
+class TrainingAuditEventAdmin(ModelAdmin):
+    list_display = ['action', 'account', 'actor', 'created_at']
+    list_filter = ['action', 'created_at']
+    search_fields = ['action', 'reason', 'account__user__name', 'actor__name']
+    autocomplete_fields = ['actor', 'account']
+    readonly_fields = ['actor', 'account', 'action', 'reason', 'details', 'created_at']
+
+    def has_add_permission(self, request):
+        return False
+
+    def has_change_permission(self, request, obj=None):
+        return False
+
+    def has_delete_permission(self, request, obj=None):
+        return False
