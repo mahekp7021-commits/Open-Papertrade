@@ -12,6 +12,7 @@ from .models import (
     UserProfile, UserSettings, Achievement, UserAchievement,
     Trade, Holding, Watchlist, PriceAlert, SiteSettings, APIKey, LimitOrder,
     Strategy, Backtest, TrainingAccount, TrainerTradingConfig, TrainingNote, TrainingAuditEvent,
+    ForexDemoWallet, ForexPosition, ForexTrade,
 )
 from .email_service import send_test_email
 from .report_views import compute_weekly_report, compute_monthly_report, compute_yearly_report
@@ -409,6 +410,38 @@ class TrainingAuditEventAdmin(ModelAdmin):
     search_fields = ['action', 'reason', 'account__user__name', 'actor__name']
     autocomplete_fields = ['actor', 'account']
     readonly_fields = ['actor', 'account', 'action', 'reason', 'details', 'created_at']
+
+    def has_add_permission(self, request):
+        return False
+
+    def has_change_permission(self, request, obj=None):
+        return False
+
+    def has_delete_permission(self, request, obj=None):
+        return False
+
+
+@admin.register(ForexDemoWallet)
+class ForexDemoWalletAdmin(ModelAdmin):
+    list_display = ['account', 'balance', 'updated_at']
+    search_fields = ['account__user__name', 'account__user__username']
+    readonly_fields = ['created_at', 'updated_at']
+
+
+@admin.register(ForexPosition)
+class ForexPositionAdmin(ModelAdmin):
+    list_display = ['account', 'symbol', 'side', 'lots', 'entry_price', 'margin_used', 'status', 'opened_at']
+    list_filter = ['side', 'status', 'symbol']
+    search_fields = ['account__user__name', 'account__user__username', 'symbol']
+    readonly_fields = ['opened_at', 'closed_at', 'realized_pnl']
+
+
+@admin.register(ForexTrade)
+class ForexTradeAdmin(ModelAdmin):
+    list_display = ['account', 'event_type', 'symbol', 'side', 'lots', 'price', 'pnl', 'actor', 'created_at']
+    list_filter = ['event_type', 'symbol', 'created_at']
+    search_fields = ['account__user__name', 'account__user__username', 'reason', 'symbol']
+    readonly_fields = ['account', 'position', 'actor', 'event_type', 'symbol', 'side', 'lots', 'price', 'pnl', 'margin_used', 'reason', 'details', 'created_at']
 
     def has_add_permission(self, request):
         return False
