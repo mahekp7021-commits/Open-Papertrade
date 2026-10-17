@@ -140,4 +140,4 @@ If `"llm_providers"` is empty, your API key wasn't loaded — recheck `.env` and
 
 > **Success:**
 Everything's up. Next: [First Run](first-run.md) walks you through creating an account, adding a filing, and asking your first cited question.
-{% endhint %}
+
