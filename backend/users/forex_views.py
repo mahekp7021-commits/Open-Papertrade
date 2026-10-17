@@ -175,7 +175,17 @@ class ForexOpenPositionView(APIView):
             return Response({"error": f"Lots exceed account maximum ({config.max_position_size})."}, status=400)
 
         wallet = _wallet(account)
-        current = _snapshot(account, {})
+        quotes = data.get("quotes", {})
+        if not isinstance(quotes, dict):
+            return Response({"error": "quotes must be an object of symbol to mid-price."}, status=400)
+        existing_symbols = set(ForexPosition.objects.filter(account=account, status="OPEN").values_list("symbol", flat=True))
+        missing_quotes = sorted(existing_symbols.difference(quotes.keys()))
+        if missing_quotes:
+            return Response({"error": "Supply current demo mid-price quotes for all existing open positions.", "missingQuotes": missing_quotes}, status=400)
+        try:
+            current = _snapshot(account, quotes)
+        except ValueError as exc:
+            return Response({"error": str(exc)}, status=400)
         equity = Decimal(current["equity"])
         used_margin = Decimal(current["usedMargin"])
         entry = mid + (_pip_size(symbol) * config.spread_pips / 2 if side == "BUY" else -_pip_size(symbol) * config.spread_pips / 2)
