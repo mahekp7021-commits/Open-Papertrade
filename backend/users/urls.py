@@ -10,10 +10,15 @@ from . import admin_report_views
 from . import backtesting_views
 from . import coaching_views
 from . import copy_trading_views
+from . import training_views
 
 app_name = 'users'
 
 urlpatterns = [
+    # Manager-only virtual trading classroom
+    path('training/accounts/', training_views.TrainingAccountsView.as_view(), name='training-accounts'),
+    path('training/accounts/<uuid:account_id>/', training_views.TrainingAccountDetailView.as_view(), name='training-account-detail'),
+    path('training/accounts/<uuid:account_id>/notes/', training_views.TrainingNotesView.as_view(), name='training-account-notes'),
     # Profile
     path('profile/', views.UserProfileView.as_view(), name='profile'),
     path('profile/avatar/', views.AvatarUploadView.as_view(), name='avatar-upload'),
