@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { Suspense, useState, useEffect, useCallback } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 import Sidebar from "@/components/Sidebar";
 import QuickSettings from "@/components/QuickSettings";
@@ -54,7 +54,7 @@ function saveLayout(symbol: string, layout: ChartLayout) {
   }
 }
 
-export default function ChartPage() {
+function ChartPageContent() {
   const searchParams = useSearchParams();
   const router = useRouter();
 
@@ -191,5 +191,14 @@ export default function ChartPage() {
         </div>
       </main>
     </div>
+  );
+}
+
+
+export default function ChartPage() {
+  return (
+    <Suspense fallback={<div className="flex h-full items-center justify-center bg-[var(--bg-primary)] text-sm text-[var(--text-secondary)]">Loading chart…</div>}>
+      <ChartPageContent />
+    </Suspense>
   );
 }
