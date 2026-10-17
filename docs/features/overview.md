@@ -1,6 +1,6 @@
 # Overview
 
-{% embed url="https://youtu.be/aIAWEdcUxIo?si=iwHkHtm4TZvt-qj9" %}
+[Watch the feature overview video on YouTube](https://youtu.be/aIAWEdcUxIo)
 
 Open Papertrade ships eight major surfaces. Each has its own page with a demo video, screenshots, and how-to notes.
 
