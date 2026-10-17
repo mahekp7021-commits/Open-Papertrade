@@ -740,3 +740,88 @@ class Backtest(models.Model):
             'results': self.results,
             'created_at': self.created_at.isoformat(),
         }
+
+class TrainingAccount(models.Model):
+    """Manager-controlled account for a virtual trading classroom."""
+    ROLE_CHOICES = [('TRAINER', 'Trainer'), ('TRAINEE', 'Trainee')]
+
+    user = models.OneToOneField(UserProfile, on_delete=models.CASCADE, related_name='training_account')
+    created_by = models.ForeignKey(
+        UserProfile, on_delete=models.SET_NULL, null=True, blank=True,
+        related_name='training_accounts_created',
+    )
+    role = models.CharField(max_length=10, choices=ROLE_CHOICES, default='TRAINEE')
+    is_enabled = models.BooleanField(default=True)
+    notes = models.TextField(blank=True, default='')
+    created_at = models.DateTimeField(default=timezone.now)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = 'training_accounts'
+        ordering = ['user__name']
+
+    def __str__(self):
+        return f"{self.user.username or self.user.email} ({self.get_role_display()})"
+
+
+class TrainerTradingConfig(models.Model):
+    """Per-account settings for simulated forex trading; not connected to a live broker."""
+    account = models.OneToOneField(TrainingAccount, on_delete=models.CASCADE, related_name='trading_config')
+    leverage = models.PositiveIntegerField(default=100, help_text='Demo leverage, e.g. 100 means 1:100.')
+    spread_pips = models.DecimalField(max_digits=8, decimal_places=3, default=Decimal('1.000'))
+    margin_call_level_percent = models.DecimalField(max_digits=7, decimal_places=2, default=Decimal('100.00'))
+    stop_out_level_percent = models.DecimalField(max_digits=7, decimal_places=2, default=Decimal('50.00'))
+    max_position_size = models.DecimalField(max_digits=20, decimal_places=4, default=Decimal('10.0000'))
+    allowed_symbols = models.JSONField(default=list, blank=True, help_text='Allowed demo symbols, e.g. ["EURUSD", "GBPUSD"]. Empty means no per-account allowlist.')
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = 'trainer_trading_configs'
+        verbose_name = 'Trainer Trading Configuration'
+        verbose_name_plural = 'Trainer Trading Configurations'
+
+    def __str__(self):
+        return f"{self.account} — 1:{self.leverage}"
+
+
+class TrainingNote(models.Model):
+    """Coaching/review notes attached to a trainee or a simulated trade."""
+    account = models.ForeignKey(TrainingAccount, on_delete=models.CASCADE, related_name='coaching_notes')
+    author = models.ForeignKey(UserProfile, on_delete=models.SET_NULL, null=True, related_name='training_notes_written')
+    trade = models.ForeignKey(Trade, on_delete=models.SET_NULL, null=True, blank=True, related_name='training_notes')
+    title = models.CharField(max_length=160)
+    body = models.TextField()
+    category = models.CharField(max_length=20, choices=[
+        ('REVIEW', 'Trade Review'),
+        ('RISK', 'Risk Management'),
+        ('TIMING', 'Entry/Exit Timing'),
+        ('GENERAL', 'General Coaching'),
+    ], default='REVIEW')
+    created_at = models.DateTimeField(default=timezone.now)
+
+    class Meta:
+        db_table = 'training_notes'
+        ordering = ['-created_at']
+
+    def __str__(self):
+        return f"{self.title} — {self.account}"
+
+
+class TrainingAuditEvent(models.Model):
+    """Append-only audit trail for manager actions in the demo classroom."""
+    actor = models.ForeignKey(UserProfile, on_delete=models.SET_NULL, null=True, related_name='training_audit_events')
+    account = models.ForeignKey(TrainingAccount, on_delete=models.SET_NULL, null=True, related_name='audit_events')
+    action = models.CharField(max_length=40)
+    reason = models.TextField()
+    details = models.JSONField(default=dict, blank=True)
+    created_at = models.DateTimeField(default=timezone.now)
+
+    class Meta:
+        db_table = 'training_audit_events'
+        ordering = ['-created_at']
+        verbose_name = 'Training Audit Event'
+        verbose_name_plural = 'Training Audit Events'
+
+    def __str__(self):
+        return f"{self.action} — {self.created_at:%Y-%m-%d %H:%M}"
+
