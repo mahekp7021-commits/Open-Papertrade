@@ -54,9 +54,9 @@ OPENROUTER_API_KEY=sk-or-v1-<your-key-here>
 OPENROUTER_MODEL=anthropic/claude-3.5-sonnet
 ```
 
-{% hint style="warning" %}
+> **Warning:**
 The `SEC_EDGAR_USER_AGENT` is not optional — SEC blocks generic user-agents. Use a real email so if you get flagged, they can contact you instead of banning your IP.
-{% endhint %}
+
 
 See [LLM Providers → Overview](../llm-providers/overview.md) for other provider options.
 
@@ -138,6 +138,6 @@ You should see JSON with your configured provider:
 
 If `"llm_providers"` is empty, your API key wasn't loaded — recheck `.env` and restart the server.
 
-{% hint style="success" %}
+> **Success:**
 Everything's up. Next: [First Run](first-run.md) walks you through creating an account, adding a filing, and asking your first cited question.
 {% endhint %}
