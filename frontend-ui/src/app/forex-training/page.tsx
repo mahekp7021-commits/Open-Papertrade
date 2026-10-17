@@ -37,7 +37,10 @@ export default function ForexTrainingPage() {
   const [side, setSide] = useState<"BUY" | "SELL">("BUY");
   const [lots, setLots] = useState("0.10");
   const [midPrice, setMidPrice] = useState("1.08500");
-  const [quotesText, setQuotesText] = useState('{"EURUSD":"1.08500"}');
+  const [quotesText, setQuotesText] = useState('{"EURUSD":"1.08500","GBPUSD":"1.27000","AUDUSD":"0.66000","NZDUSD":"0.61000"}');
+  const [quoteSource, setQuoteSource] = useState("Manual demo prices");
+  const [quoteUpdatedAt, setQuoteUpdatedAt] = useState<string | null>(null);
+  const [autoRefresh, setAutoRefresh] = useState(false);
   const [reason, setReason] = useState("Practice trade for training review");
   const [message, setMessage] = useState<{ kind: "ok" | "error"; text: string } | null>(null);
   const [busy, setBusy] = useState(false);
@@ -77,9 +80,42 @@ export default function ForexTrainingPage() {
 
   const parseQuotes = () => {
     const value = JSON.parse(quotesText);
-    if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error("Quotes must be a JSON object, e.g. {"EURUSD":"1.08500"}.");
+    if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error('Quotes must be a JSON object, e.g. {"EURUSD":"1.08500"}.');
     return value as Record<string, string>;
   };
+
+  const loadReferenceRates = () => runAction(async () => {
+    // Daily reference data only; these are not streaming or broker quotes.
+    const response = await fetch("https://open.er-api.com/v6/latest/USD", { cache: "no-store" });
+    if (!response.ok) throw new Error("Reference-rate service is unavailable. You can still enter demo prices manually.");
+    const data = await response.json();
+    if (data.result !== "success" || !data.rates) throw new Error("Reference-rate service returned invalid data.");
+    const pairs = ["EURUSD", "GBPUSD", "AUDUSD", "NZDUSD"];
+    const quotes: Record<string, string> = {};
+    for (const pair of pairs) {
+      const quotePerUsd = Number(data.rates[pair.slice(3)]);
+      if (Number.isFinite(quotePerUsd) && quotePerUsd > 0) quotes[pair] = (1 / quotePerUsd).toFixed(5);
+    }
+    if (!Object.keys(quotes).length) throw new Error("No supported reference rates were returned.");
+    setQuotesText(JSON.stringify(quotes, null, 2));
+    if (quotes[symbol]) setMidPrice(quotes[symbol]);
+    setQuoteSource("Daily public reference rates (not live market quotes)");
+    setQuoteUpdatedAt(data.time_last_update_utc || new Date().toISOString());
+    setMessage({ kind: "ok", text: "Reference rates loaded. These are indicative daily rates, not streaming FX prices." });
+  });
+
+  useEffect(() => {
+    if (!autoRefresh || !accountId) return;
+    const timer = window.setInterval(async () => {
+      try {
+        const quotes = parseQuotes();
+        const data = await api("/users/training/accounts/" + accountId + "/forex/snapshot/", "POST", { quotes });
+        setSnapshot(data);
+        await loadHistory(accountId);
+      } catch { /* Keep the last successful valuation visible. */ }
+    }, 5000);
+    return () => window.clearInterval(timer);
+  }, [autoRefresh, accountId, quotesText, loadHistory]);
 
   const refreshSnapshot = () => runAction(async () => {
     if (!accountId) throw new Error("Select a training account first.");
@@ -119,7 +155,7 @@ export default function ForexTrainingPage() {
             <div>
               <div className="mb-2 flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.18em] text-[var(--accent-primary)]"><Activity size={15} /> Training Lab</div>
               <h1 className="text-2xl font-semibold tracking-tight sm:text-3xl">Forex Demo Terminal</h1>
-              <p className="mt-2 max-w-2xl text-sm text-[var(--text-secondary)]">Manager-operated practice terminal. Quotes are manually supplied demo prices, not a live feed.</p>
+              <p className="mt-2 max-w-2xl text-sm text-[var(--text-secondary)]">Manager-operated practice terminal. Use public daily reference rates or enter simulated prices manually. This is not a live feed.</p>
             </div>
             <button onClick={() => runAction(async () => { await loadAccounts(); if (accountId) await loadHistory(accountId); })} disabled={busy} className="inline-flex items-center justify-center gap-2 rounded-xl border border-[var(--border-muted)] px-4 py-2.5 text-sm hover:bg-[var(--bg-hover)] disabled:opacity-50"><RefreshCw size={15} /> Refresh</button>
           </div>
@@ -159,11 +195,11 @@ export default function ForexTrainingPage() {
                     <div><label className={label}>Lots</label><input className={field} type="number" min="0.0001" step="0.01" value={lots} onChange={(e) => setLots(e.target.value)} /></div>
                     <div><label className={label}>Demo mid-price</label><input className={field} type="number" min="0.000001" step="0.00001" value={midPrice} onChange={(e) => setMidPrice(e.target.value)} /></div>
                     <div className="sm:col-span-2"><label className={label}>Reason / lesson note (required)</label><input className={field} value={reason} onChange={(e) => setReason(e.target.value)} maxLength={5000} /></div>
-                    <div className="sm:col-span-2"><label className={label}>Demo quotes JSON (used for floating P/L and free-margin checks)</label><textarea className={`${field} min-h-20 font-mono text-xs`} value={quotesText} onChange={(e) => setQuotesText(e.target.value)} spellCheck={false} /></div>
+                    <div className="sm:col-span-2 rounded-xl border border-[var(--border-muted)] p-3"><div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between"><div><p className="text-sm font-medium">{quoteSource}</p><p className="mt-1 text-xs text-[var(--text-secondary)]">{quoteUpdatedAt ? "Last reference update: " + quoteUpdatedAt : "No reference rates loaded this session."}</p></div><button type="button" onClick={loadReferenceRates} disabled={busy} className="rounded-lg border border-[var(--border-muted)] px-3 py-2 text-xs hover:bg-[var(--bg-hover)] disabled:opacity-50">Load public reference rates</button></div></div><div className="sm:col-span-2"><label className={label}>Demo quotes JSON (used for floating P/L and free-margin checks)</label><textarea className={`${field} min-h-20 font-mono text-xs`} value={quotesText} onChange={(e) => setQuotesText(e.target.value)} spellCheck={false} /></div>
                   </div>
                   <button onClick={openPosition} disabled={busy || !selected?.enabled} className="mt-5 w-full rounded-xl bg-[var(--accent-primary)] px-4 py-3 text-sm font-semibold text-white hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50">{busy ? "Working…" : `Open demo ${side}`}</button>
-                  <button onClick={refreshSnapshot} disabled={busy} className="mt-2 w-full rounded-xl border border-[var(--border-muted)] px-4 py-2.5 text-sm hover:bg-[var(--bg-hover)] disabled:opacity-50">Recalculate equity & risk</button>
-                  <p className="mt-3 text-xs leading-5 text-[var(--text-secondary)]"><ShieldCheck size={13} className="mr-1 inline" />Virtual funds only. No broker order is sent. Prices must be provided by the manager.</p>
+                  <button onClick={refreshSnapshot} disabled={busy} className="mt-2 w-full rounded-xl border border-[var(--border-muted)] px-4 py-2.5 text-sm hover:bg-[var(--bg-hover)] disabled:opacity-50">Recalculate equity & risk</button><label className="mt-3 flex items-center gap-2 text-xs text-[var(--text-secondary)]"><input type="checkbox" checked={autoRefresh} onChange={(e) => setAutoRefresh(e.target.checked)} />Auto-refresh floating P/L every 5 seconds using the quotes above</label>
+                  <p className="mt-3 text-xs leading-5 text-[var(--text-secondary)]"><ShieldCheck size={13} className="mr-1 inline" />Virtual funds only. No broker order is sent. Prices can be entered manually or populated from daily public reference rates; auto-refresh recalculates using those same rates.</p>
                 </section>
 
                 <section className={panel}>
@@ -176,7 +212,7 @@ export default function ForexTrainingPage() {
               </div>
             </>
           )}
-          <p className="mt-6 text-xs text-[var(--text-muted)]">Educational demo only · Caller-supplied prices · USD-quoted pairs only · Not connected to a live broker or financial account.</p>
+          <p className="mt-6 text-xs text-[var(--text-muted)]">Educational demo only · Manual or daily reference prices · USD-quoted pairs only · Not connected to a live broker or financial account.</p>
         </div>
       </main>
     </div>
