@@ -2,7 +2,7 @@
 
 ## Project goal
 
-Extend this fork of Open Papertrade into a transparent, multi-user Forex demo-training platform. All orders and account funds are simulated; this project must not accept deposits, withdrawals, or place real trades.
+Extend this fork of Open Papertrade into a transparent, multi-user Forex demo-training platform for trainers and trainees. All balances and orders are simulated; the platform must not accept real-money deposits/withdrawals or place real broker trades.
 
 ## Current baseline
 
@@ -12,34 +12,71 @@ Extend this fork of Open Papertrade into a transparent, multi-user Forex demo-tr
 - Existing paper-trading functionality covers virtual portfolios, market/limit orders, holdings, transactions, and price alerts.
 - The existing repository is primarily general paper trading. Forex-specific instruments, lot sizing, leverage, margin, and a complete Forex execution/accounting engine must not be assumed to exist until audited and implemented.
 
-## Planned milestones
+## Roles
 
-### 1. Audit and safe foundation
-- Map the current account, trade, holding, settings, and admin models.
-- Confirm existing authentication, permissions, and API behaviour.
-- Preserve upstream functionality where practical.
-- Keep all custom work in this fork and document each change.
+- **Platform Manager/Admin:** manages trainers/trainees, account permissions, demo settings, and audit records.
+- **Trainer/Trainee account:** logs into its own WebTrader and practices with virtual funds.
+- Role and account ownership checks must be enforced on the backend, not just hidden in the UI.
 
-### 2. Demo account management
-- Manager-only demo-account creation and account status controls.
+## Planned features
+
+### 1. Trainer account creation and access
+- Manager creates a separate login username and temporary password for each trainer/trainee account.
+- Require password change on first login; never display or store plaintext passwords.
+- Manager can reset access, enable/disable an account, and view account status.
+- Each account has its own isolated virtual balance, positions, orders, and history.
+
+### 2. Trainer account support and teaching
+- Manager can open a trainee's account view in a clearly marked supervised/support mode.
+- Show account balance, equity, open positions, margin, orders, and history to authorized staff.
+- Add a lesson/notes area to explain trading concepts, mistakes, risk, and suggested next steps.
+- Record who added each note and when; the trainee can see the coaching notes.
+- Provide educational explanations for position sizing, spread, leverage, margin, entry/exit timing, and risk management.
+
+### 3. Supervised trading on behalf of a trainee
+- Authorized Manager/Trainer can place a simulated BUY/SELL order for a selected trainee account.
+- Before submission, show the selected account, instrument, side, size, estimated spread/margin, and reason.
+- Clearly label it as a staff-assisted demo order.
+- Record actor, account owner, order details, timestamp, and reason in an immutable audit log.
+- Never submit real-money trades. Do not allow staff to impersonate a trainee without an audit trail.
+
+### 4. Per-account trading configuration
+- Set each account's virtual starting balance.
+- Configure leverage, margin requirements, spread, allowed instruments, maximum position size, maximum open positions, and risk limits per account.
+- Validate every setting and every order server-side.
+- Explain the active account rules to the trainee in the WebTrader.
+- Spread and price rules must be disclosed as demo configuration; do not secretly alter prices to force an outcome.
+
+### 5. Trade review, correction, and coaching
+- Manager can flag a trade as a learning example and attach an explanation: entry timing, exit timing, position size, spread cost, leverage, margin, Stop Loss/Take Profit, and risk/reward.
+- Show trade timeline and the market data available at the time, when that data exists.
+- Manager can suggest a correction or a hypothetical alternative trade for learning.
+- If a demo position needs an administrative close or account correction, require a reason and create an audit event.
+- Never silently rewrite past trades, fabricate a market price, or change historical P&L to mislead the trainee. Keep original events and record any adjustment separately.
+- Add a review status such as Needs Review / Discussed / Learning Completed.
+
+### 6. Demo account and audit management
+- Manager-only account creation and account status controls.
 - Configurable starting virtual balance and manager adjustments.
-- Append-only audit records for balance adjustments, including actor, amount, reason, and timestamp.
-- Enforce permissions server-side; never trust frontend role checks alone.
+- Append-only audit records for balance adjustments, order actions, account changes, and administrative position closure, including actor, amount/details, reason, and timestamp.
+- Reset flow must clearly state what will be reset and require confirmation; preserve an audit record.
 
-### 3. Forex instruments and simulated execution
+### 7. Forex instruments and simulated execution
 - Start with configurable demo instruments such as EURUSD, GBPUSD, USDJPY, XAUUSD, and BTCUSD, subject to a suitable data provider.
-- Model position size/lot units, quote precision, spread, leverage, margin, equity, free margin, and unrealized/realized P&L explicitly.
-- Support market orders first, then pending orders, stop loss, and take profit.
+- Model position size/lot units, quote precision, bid/ask, spread, leverage, margin, equity, free margin, and unrealized/realized P&L explicitly.
+- Support market orders first, then pending orders, Stop Loss, and Take Profit.
 - Validate orders and update balances/positions atomically on the server.
-- Display a clear DEMO / VIRTUAL FUNDS ONLY notice.
+- Display a clear DEMO / VIRTUAL FUNDS ONLY notice and show stale/unavailable market data honestly.
 
-### 4. WebTrader
+### 8. WebTrader
+- Responsive desktop and mobile browser UI.
 - Market Watch, chart area, order ticket, open positions, history, and account metrics.
-- Show market-data freshness and errors honestly.
+- Mobile-friendly touch controls; desktop layout optimized for wider screens.
+- Clearly show the current account's assigned leverage, margin rules, spread configuration, permissions, and any trading restrictions.
 - Clearly distinguish provider quotes from simulated execution prices.
 
-### 5. Verification and deployment readiness
-- Add tests for authorization, balance adjustments, order validation, margin calculations, and P&L.
+### 9. Verification and deployment readiness
+- Add tests for authorization, account isolation, password handling, manager-assisted orders, audit logs, balance adjustments, order validation, margin calculations, and P&L.
 - Review secrets, CORS, CSRF/authentication, rate limits, and production settings.
 - Document deployment environment variables and database persistence requirements.
 
@@ -48,6 +85,7 @@ Extend this fork of Open Papertrade into a transparent, multi-user Forex demo-tr
 - No real-money deposits or withdrawals.
 - No live broker execution.
 - No misleading representation that demo trades are real trades.
+- No silent or deceptive alteration of trainee trades, historical prices, or results.
 - No hardcoded fake live prices presented as real market data.
 
 ## Hosting note
