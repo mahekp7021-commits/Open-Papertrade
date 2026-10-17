@@ -116,6 +116,26 @@ class ForexAccountSnapshotView(APIView):
         warning = "NORMAL"
         if level is not None and level <= config.stop_out_level_percent:
             warning = "STOP_OUT_THRESHOLD_REACHED"
+            open_positions = list(ForexPosition.objects.filter(account=account, status="OPEN"))
+            # Liquidate only when a quote is supplied for every open position.
+            if open_positions and all(p.symbol in quotes for p in open_positions):
+                actor = _manager(request)
+                wallet = _wallet(account)
+                for position in open_positions:
+                    mid = _decimal(quotes[position.symbol], f"Quote for {position.symbol}")
+                    pnl, exit_price = _pnl(position, mid, config.spread_pips)
+                    wallet.balance = (wallet.balance + pnl).quantize(CENT, rounding=ROUND_HALF_UP)
+                    position.status = "CLOSED"
+                    position.close_price = exit_price
+                    position.realized_pnl = pnl
+                    position.closed_by = actor
+                    position.close_reason = "Automatic simulated stop-out: configured threshold reached."
+                    position.closed_at = timezone.now()
+                    position.save(update_fields=["status", "close_price", "realized_pnl", "closed_by", "close_reason", "closed_at"])
+                    ForexTrade.objects.create(account=account, position=position, actor=actor, event_type="STOP_OUT", symbol=position.symbol, side=position.side, lots=position.lots, price=exit_price, pnl=pnl, margin_used=position.margin_used, reason=position.close_reason, details={"midPrice": str(mid), "marginLevelPercent": str(level)})
+                    TrainingAuditEvent.objects.create(actor=actor, account=account, action="FOREX_DEMO_STOP_OUT", reason=position.close_reason, details={"position_id": position.id, "symbol": position.symbol, "realized_pnl": str(pnl), "no_live_order": True})
+                wallet.save(update_fields=["balance", "updated_at"])
+                snapshot = _snapshot(account, quotes)
         elif level is not None and level <= config.margin_call_level_percent:
             warning = "MARGIN_CALL"
         snapshot["riskStatus"] = warning
