@@ -179,27 +179,39 @@ class LoginView(APIView):
 
     def post(self, request):
         data = request.data
-        email = data.get('email', '').strip().lower()
+        identifier = (data.get('email') or data.get('username') or '').strip().lower()
         password = data.get('password', '')
 
-        if not email or not password:
+        if not identifier or not password:
             return Response(
-                {'error': 'Email and password are required'},
+                {'error': 'Username/email and password are required'},
                 status=status.HTTP_400_BAD_REQUEST
             )
 
         try:
-            user = UserProfile.objects.get(email=email)
-        except UserProfile.DoesNotExist:
+            from django.db.models import Q
+            user = UserProfile.objects.get(Q(email=identifier) | Q(username=identifier))
+        except (UserProfile.DoesNotExist, UserProfile.MultipleObjectsReturned):
             return Response(
-                {'error': 'Invalid email or password'},
+                {'error': 'Invalid username/email or password'},
                 status=status.HTTP_401_UNAUTHORIZED
             )
 
         if not user.password or not user.check_password(password):
             return Response(
-                {'error': 'Invalid email or password'},
+                {'error': 'Invalid username/email or password'},
                 status=status.HTTP_401_UNAUTHORIZED
+            )
+
+        # Manager-created classroom accounts can be disabled without deleting history.
+        try:
+            training_account = user.training_account
+        except Exception:
+            training_account = None
+        if training_account is not None and not training_account.is_enabled:
+            return Response(
+                {'error': 'This training account is disabled. Contact your manager.'},
+                status=status.HTTP_403_FORBIDDEN
             )
 
         # Check email verification if enabled
