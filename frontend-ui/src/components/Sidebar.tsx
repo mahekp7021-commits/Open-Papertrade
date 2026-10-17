@@ -19,6 +19,7 @@ import {
   Copy,
   CandlestickChart,
   FileSearch,
+  Gauge,
 } from "lucide-react";
 import { usePortfolio } from "@/context/PortfolioContext";
 import { useAuth } from "@/context/AuthContext";
@@ -63,6 +64,7 @@ const navItems = [
   { icon: <CandlestickChart size={18} />, label: "Charts", href: "/chart" },
   { icon: <Wallet size={18} />, label: "Portfolio", href: "/portfolio" },
   { icon: <Repeat size={18} />, label: "Trade", href: "/trade" },
+  { icon: <Gauge size={18} />, label: "Forex Training", href: "/forex-training" },
   { icon: <History size={18} />, label: "History", href: "/history" },
   { icon: <Star size={18} />, label: "Watchlist", href: "/watchlist" },
   { icon: <FileBarChart size={18} />, label: "Reports", href: "/reports" },
