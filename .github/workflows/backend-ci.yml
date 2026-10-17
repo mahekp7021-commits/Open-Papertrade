@@ -40,3 +40,5 @@ jobs:
         run: python manage.py check
       - name: Check migration files are up to date
         run: python manage.py makemigrations --check --dry-run
+      - name: Run Forex helper unit tests
+        run: python manage.py test users.tests --verbosity 2
