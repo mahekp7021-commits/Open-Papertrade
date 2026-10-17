@@ -41,6 +41,6 @@ Optional keys (nice to have, not required):
 * Docker, Kubernetes, or cloud infra — this runs on your laptop.
 * An SEC.gov account — EDGAR is public and free.
 
-{% hint style="info" %}
+
 Once prerequisites are checked off, head to [Installation](installation.md) — the whole path from `git clone` to your first cited answer is about 15 minutes.
-{% endhint %}
+
