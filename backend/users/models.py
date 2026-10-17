@@ -825,3 +825,73 @@ class TrainingAuditEvent(models.Model):
     def __str__(self):
         return f"{self.action} — {self.created_at:%Y-%m-%d %H:%M}"
 
+
+
+# ── Forex training engine (virtual funds only) ──────────────────
+
+class ForexDemoWallet(models.Model):
+    """Separate forex-only wallet; never mixes with the stock/share paper ledger."""
+    account = models.OneToOneField(TrainingAccount, on_delete=models.CASCADE, related_name='forex_wallet')
+    balance = models.DecimalField(max_digits=20, decimal_places=2, default=Decimal('100000.00'))
+    created_at = models.DateTimeField(default=timezone.now)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = 'forex_demo_wallets'
+
+    def __str__(self):
+        return f"Forex wallet — {self.account}"
+
+
+class ForexPosition(models.Model):
+    """Open simulated FX position. Prices and P/L are for USD-quoted pairs only."""
+    SIDE_CHOICES = [('BUY', 'Buy'), ('SELL', 'Sell')]
+    account = models.ForeignKey(TrainingAccount, on_delete=models.CASCADE, related_name='forex_positions')
+    symbol = models.CharField(max_length=12)
+    side = models.CharField(max_length=4, choices=SIDE_CHOICES)
+    lots = models.DecimalField(max_digits=12, decimal_places=4)
+    entry_price = models.DecimalField(max_digits=16, decimal_places=6)
+    entry_mid_price = models.DecimalField(max_digits=16, decimal_places=6)
+    margin_used = models.DecimalField(max_digits=20, decimal_places=2)
+    leverage_at_open = models.PositiveIntegerField()
+    spread_pips_at_open = models.DecimalField(max_digits=8, decimal_places=3)
+    status = models.CharField(max_length=8, default='OPEN', choices=[('OPEN', 'Open'), ('CLOSED', 'Closed')])
+    opened_by = models.ForeignKey(UserProfile, on_delete=models.SET_NULL, null=True, related_name='forex_positions_opened')
+    open_reason = models.TextField()
+    opened_at = models.DateTimeField(default=timezone.now)
+    close_price = models.DecimalField(max_digits=16, decimal_places=6, null=True, blank=True)
+    realized_pnl = models.DecimalField(max_digits=20, decimal_places=2, default=Decimal('0.00'))
+    closed_by = models.ForeignKey(UserProfile, on_delete=models.SET_NULL, null=True, blank=True, related_name='forex_positions_closed')
+    close_reason = models.TextField(blank=True, default='')
+    closed_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        db_table = 'forex_positions'
+        ordering = ['-opened_at']
+
+    def __str__(self):
+        return f"{self.side} {self.lots} {self.symbol} ({self.status})"
+
+
+class ForexTrade(models.Model):
+    """Immutable event/history row for forex opens, closes and risk liquidations."""
+    account = models.ForeignKey(TrainingAccount, on_delete=models.CASCADE, related_name='forex_trades')
+    position = models.ForeignKey(ForexPosition, on_delete=models.SET_NULL, null=True, related_name='events')
+    actor = models.ForeignKey(UserProfile, on_delete=models.SET_NULL, null=True, related_name='forex_trade_events')
+    event_type = models.CharField(max_length=20, choices=[
+        ('OPEN', 'Open'), ('CLOSE', 'Close'), ('STOP_OUT', 'Stop Out'),
+    ])
+    symbol = models.CharField(max_length=12)
+    side = models.CharField(max_length=4)
+    lots = models.DecimalField(max_digits=12, decimal_places=4)
+    price = models.DecimalField(max_digits=16, decimal_places=6)
+    pnl = models.DecimalField(max_digits=20, decimal_places=2, default=Decimal('0.00'))
+    margin_used = models.DecimalField(max_digits=20, decimal_places=2, default=Decimal('0.00'))
+    reason = models.TextField()
+    details = models.JSONField(default=dict, blank=True)
+    created_at = models.DateTimeField(default=timezone.now)
+
+    class Meta:
+        db_table = 'forex_trades'
+        ordering = ['-created_at']
+
