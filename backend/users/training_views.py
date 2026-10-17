@@ -16,7 +16,7 @@ from rest_framework.views import APIView
 
 from .models import (
     UserProfile, UserSettings, TrainingAccount, TrainerTradingConfig,
-    TrainingNote, TrainingAuditEvent,
+    TrainingNote, TrainingAuditEvent, Trade, Holding,
 )
 from .views import get_user
 
@@ -223,3 +223,108 @@ class TrainingNotesView(APIView):
             details={"note_id": note.id, "trade_id": str(trade.id) if trade else None, "category": category},
         )
         return Response({"id": note.id, "title": note.title, "category": note.category}, status=status.HTTP_201_CREATED)
+
+
+
+class TrainingAccountTradesView(APIView):
+    """Manager view of one training account's current positions and trade history."""
+
+    def get(self, request, account_id):
+        _manager(request)
+        account = get_object_or_404(TrainingAccount.objects.select_related("user"), pk=account_id)
+        holdings = Holding.objects.filter(user=account.user).order_by("symbol")
+        trades = Trade.objects.filter(user=account.user).order_by("-executed_at")[:200]
+        return Response({
+            "account": _account_payload(account),
+            "positions": [holding.to_dict() for holding in holdings],
+            "trades": [trade.to_dict() for trade in trades],
+        })
+
+
+class ManagerDemoTradeView(APIView):
+    """Place an explicitly manager-attributed BUY/SELL in the virtual paper ledger."""
+
+    @transaction.atomic
+    def post(self, request, account_id):
+        actor = _manager(request)
+        account = get_object_or_404(TrainingAccount.objects.select_related("user"), pk=account_id)
+        if not account.is_enabled:
+            return Response({"error": "This training account is disabled."}, status=status.HTTP_400_BAD_REQUEST)
+
+        data = request.data
+        symbol = str(data.get("symbol", "")).strip().upper()
+        name = str(data.get("name", symbol)).strip()[:200]
+        side = str(data.get("side", "")).strip().upper()
+        reason = str(data.get("reason", "")).strip()
+        try:
+            quantity = Decimal(str(data.get("quantity", "0")))
+            price = Decimal(str(data.get("price", "0")))
+        except (InvalidOperation, ValueError, TypeError):
+            return Response({"error": "Quantity and price must be valid numbers."}, status=status.HTTP_400_BAD_REQUEST)
+
+        if not symbol or side not in ("BUY", "SELL") or quantity <= 0 or price <= 0:
+            return Response({"error": "Provide symbol, BUY/SELL side, positive quantity and positive demo price."}, status=status.HTTP_400_BAD_REQUEST)
+        if not reason:
+            return Response({"error": "A reason is required for every manager-assisted trade."}, status=status.HTTP_400_BAD_REQUEST)
+        if len(symbol) > 20:
+            return Response({"error": "Symbol is too long."}, status=status.HTTP_400_BAD_REQUEST)
+
+        config, _ = TrainerTradingConfig.objects.get_or_create(account=account)
+        if config.allowed_symbols and symbol not in config.allowed_symbols:
+            return Response({"error": "This symbol is not allowed for this training account."}, status=status.HTTP_400_BAD_REQUEST)
+        if quantity > config.max_position_size:
+            return Response({"error": f"Quantity exceeds this account's maximum position size ({config.max_position_size})."}, status=status.HTTP_400_BAD_REQUEST)
+
+        user = account.user
+        total = quantity * price
+        if side == "BUY":
+            if total > user.buying_power:
+                return Response({"error": "Insufficient demo balance."}, status=status.HTTP_400_BAD_REQUEST)
+            user.buying_power -= total
+            user.save(update_fields=["buying_power", "updated_at"])
+            holding, created = Holding.objects.get_or_create(
+                user=user, symbol=symbol,
+                defaults={"name": name, "shares": Decimal("0"), "avg_cost": Decimal("0"), "currency": "USD"},
+            )
+            previous_quantity = holding.shares
+            new_quantity = previous_quantity + quantity
+            holding.avg_cost = ((previous_quantity * holding.avg_cost) + total) / new_quantity
+            holding.shares = new_quantity
+            holding.name = name
+            holding.save()
+        else:
+            try:
+                holding = Holding.objects.get(user=user, symbol=symbol)
+            except Holding.DoesNotExist:
+                return Response({"error": f"No demo position exists for {symbol}."}, status=status.HTTP_400_BAD_REQUEST)
+            if quantity > holding.shares:
+                return Response({"error": "SELL quantity exceeds the available demo position."}, status=status.HTTP_400_BAD_REQUEST)
+            user.buying_power += total
+            user.save(update_fields=["buying_power", "updated_at"])
+            holding.shares -= quantity
+            if holding.shares == 0:
+                holding.delete()
+            else:
+                holding.save()
+
+        trade = Trade.objects.create(
+            user=user, symbol=symbol, name=name, trade_type=side,
+            shares=quantity, price=price, total=total, currency="USD",
+        )
+        TrainingAuditEvent.objects.create(
+            actor=actor, account=account, action="MANAGER_DEMO_TRADE",
+            reason=reason[:5000],
+            details={
+                "trade_id": str(trade.id), "symbol": symbol, "side": side,
+                "quantity": str(quantity), "price": str(price), "total": str(total),
+                "leverage_setting": config.leverage,
+                "note": "Manager-assisted simulated paper trade; no live broker order was sent.",
+            },
+        )
+        return Response({
+            "message": "Manager-assisted demo trade recorded.",
+            "trade": trade.to_dict(),
+            "demoBalance": str(user.buying_power),
+            "actor": actor.username,
+            "auditLogged": True,
+        }, status=status.HTTP_201_CREATED)
