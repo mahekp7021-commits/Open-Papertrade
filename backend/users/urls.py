@@ -19,6 +19,8 @@ urlpatterns = [
     path('training/accounts/', training_views.TrainingAccountsView.as_view(), name='training-accounts'),
     path('training/accounts/<int:account_id>/', training_views.TrainingAccountDetailView.as_view(), name='training-account-detail'),
     path('training/accounts/<int:account_id>/notes/', training_views.TrainingNotesView.as_view(), name='training-account-notes'),
+    path('training/accounts/<int:account_id>/trades/', training_views.TrainingAccountTradesView.as_view(), name='training-account-trades'),
+    path('training/accounts/<int:account_id>/trades/execute/', training_views.ManagerDemoTradeView.as_view(), name='training-manager-demo-trade'),
     # Profile
     path('profile/', views.UserProfileView.as_view(), name='profile'),
     path('profile/avatar/', views.AvatarUploadView.as_view(), name='avatar-upload'),
