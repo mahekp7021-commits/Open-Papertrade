@@ -140,6 +140,17 @@ class TrainingAccountDetailView(APIView):
         account = get_object_or_404(TrainingAccount.objects.select_related("user"), pk=account_id)
         data = request.data
         user = account.user
+        # Validate virtual balance before mutating profile fields; returning a DRF
+        # error response from an atomic view does not itself trigger rollback.
+        validated_balance = None
+        if "demoBalance" in data:
+            try:
+                validated_balance = Decimal(str(data["demoBalance"]))
+            except (InvalidOperation, ValueError, TypeError):
+                return Response({"error": "demoBalance must be a valid number."}, status=status.HTTP_400_BAD_REQUEST)
+            if not validated_balance.is_finite() or validated_balance < 0:
+                return Response({"error": "demoBalance must be a finite non-negative number."}, status=status.HTTP_400_BAD_REQUEST)
+            validated_balance = validated_balance.quantize(Decimal("0.01"))
         profile_before = {"name": user.name, "username": user.username, "email": user.email}
         profile_changes = {}
         for incoming, field in (("name", "name"), ("username", "username"), ("email", "email")):
@@ -166,14 +177,8 @@ class TrainingAccountDetailView(APIView):
             TrainingAuditEvent.objects.create(actor=actor, account=account, action="TRAINEE_PROFILE_UPDATED",
                 reason=str(data.get("reason", "Manager corrected trainee registration details."))[:5000],
                 details={"before": profile_before, "changed": profile_changes})
-        if "demoBalance" in data:
-            try:
-                new_balance = Decimal(str(data["demoBalance"]))
-            except (InvalidOperation, ValueError, TypeError):
-                return Response({"error": "demoBalance must be a valid number."}, status=status.HTTP_400_BAD_REQUEST)
-            if not new_balance.is_finite() or new_balance < 0:
-                return Response({"error": "demoBalance must be a finite non-negative number."}, status=status.HTTP_400_BAD_REQUEST)
-            new_balance = new_balance.quantize(Decimal("0.01"))
+        if validated_balance is not None:
+            new_balance = validated_balance
             old_balance = user.buying_power
             user.buying_power = new_balance
             user.save(update_fields=["buying_power", "updated_at"])
