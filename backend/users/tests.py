@@ -129,6 +129,57 @@ class ForexApiIntegrationTests(TestCase):
         self.assertIn("USD-quoted", response.data["error"])
         self.assertEqual(ForexPosition.objects.count(), 0)
 
+    def test_snapshot_triggers_simulated_stop_out_and_audit_event(self):
+        self.authenticate(self.manager)
+        opened = self.client.post(self.open_url, {
+            "symbol": "EURUSD", "side": "BUY", "lots": "0.10",
+            "midPrice": "1.08500", "reason": "Prepare stop-out test",
+        }, format="json")
+        self.assertEqual(opened.status_code, 201, opened.data)
+
+        wallet = ForexDemoWallet.objects.get(account=self.account)
+        wallet.balance = Decimal("40.00")
+        wallet.save(update_fields=["balance", "updated_at"])
+        response = self.client.post(self.snapshot_url, {
+            "quotes": {"EURUSD": "1.08500"},
+        }, format="json")
+
+        self.assertEqual(response.status_code, 200, response.data)
+        self.assertEqual(response.data["riskStatus"], "STOP_OUT_THRESHOLD_REACHED")
+        position = ForexPosition.objects.get(pk=opened.data["positionId"])
+        self.assertEqual(position.status, "CLOSED")
+        self.assertTrue(ForexTrade.objects.filter(
+            position=position, event_type="STOP_OUT",
+        ).exists())
+        self.assertTrue(TrainingAuditEvent.objects.filter(
+            account=self.account, action="FOREX_DEMO_STOP_OUT",
+        ).exists())
+
+    def test_snapshot_reports_margin_call_without_liquidating(self):
+        self.authenticate(self.manager)
+        opened = self.client.post(self.open_url, {
+            "symbol": "EURUSD", "side": "BUY", "lots": "0.10",
+            "midPrice": "1.08500", "reason": "Prepare margin-call test",
+        }, format="json")
+        self.assertEqual(opened.status_code, 201, opened.data)
+
+        wallet = ForexDemoWallet.objects.get(account=self.account)
+        wallet.balance = Decimal("150.00")
+        wallet.save(update_fields=["balance", "updated_at"])
+        config = TrainerTradingConfig.objects.get(account=self.account)
+        config.margin_call_level_percent = Decimal("200.00")
+        config.stop_out_level_percent = Decimal("50.00")
+        config.save(update_fields=["margin_call_level_percent", "stop_out_level_percent", "updated_at"])
+
+        response = self.client.post(self.snapshot_url, {
+            "quotes": {"EURUSD": "1.08500"},
+        }, format="json")
+        self.assertEqual(response.status_code, 200, response.data)
+        self.assertEqual(response.data["riskStatus"], "MARGIN_CALL")
+        self.assertEqual(
+            ForexPosition.objects.get(pk=opened.data["positionId"]).status, "OPEN",
+        )
+
     def test_insufficient_margin_rejects_position(self):
         self.trainee_user.initial_balance = Decimal("1.00")
         self.trainee_user.buying_power = Decimal("1.00")
