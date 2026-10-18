@@ -326,6 +326,8 @@ class ForexEditPositionView(APIView):
             if data.get("closedAt"):
                 parsed = timezone.datetime.fromisoformat(str(data["closedAt"]).replace("Z", "+00:00"))
                 closed_at = timezone.make_aware(parsed) if timezone.is_naive(parsed) else parsed
+            if position.status == "CLOSED" and closed_at and closed_at < opened_at:
+                raise ValueError("closedAt cannot be earlier than openedAt for a closed trade.")
         except (ValueError, TypeError, OverflowError) as exc:
             return Response({"error": str(exc) or "Invalid trade values."}, status=400)
 
