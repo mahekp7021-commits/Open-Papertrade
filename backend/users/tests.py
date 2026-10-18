@@ -424,6 +424,51 @@ class TrainerCorrectionApiTests(TestCase):
         self.assertEqual(config.leverage, 100)
         self.assertFalse(ForexDemoWallet.objects.filter(account=self.account).exists())
 
+    def test_invalid_closed_trade_correction_does_not_change_wallet_or_history(self):
+        opened = self.client.post(self.open_url, {
+            "symbol": "EURUSD", "side": "BUY", "lots": "0.10",
+            "midPrice": "1.08500", "reason": "Open invalid-correction test",
+        }, format="json")
+        self.assertEqual(opened.status_code, 201, opened.data)
+        position_id = opened.data["positionId"]
+        closed = self.client.post(
+            f"/api/users/training/accounts/{self.account.id}/forex/positions/{position_id}/close/",
+            {"midPrice": "1.08600", "reason": "Close invalid-correction test"}, format="json",
+        )
+        self.assertEqual(closed.status_code, 200, closed.data)
+        wallet_before = ForexDemoWallet.objects.get(account=self.account).balance
+        position_before = ForexPosition.objects.get(pk=position_id).realized_pnl
+        event_count_before = ForexTrade.objects.filter(position_id=position_id).count()
+        response = self.client.patch(
+            f"/api/users/training/accounts/{self.account.id}/forex/positions/{position_id}/edit/",
+            {"closeMidPrice": "-1", "reason": "Invalid close price must not apply"}, format="json",
+        )
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(ForexDemoWallet.objects.get(account=self.account).balance, wallet_before)
+        self.assertEqual(ForexPosition.objects.get(pk=position_id).realized_pnl, position_before)
+        self.assertEqual(ForexTrade.objects.filter(position_id=position_id).count(), event_count_before)
+
+    def test_open_trade_correction_updates_margin_without_realizing_pnl(self):
+        opened = self.client.post(self.open_url, {
+            "symbol": "EURUSD", "side": "BUY", "lots": "0.10",
+            "midPrice": "1.08500", "reason": "Open position edit test",
+        }, format="json")
+        self.assertEqual(opened.status_code, 201, opened.data)
+        position_id = opened.data["positionId"]
+        wallet_before = ForexDemoWallet.objects.get(account=self.account).balance
+        response = self.client.patch(
+            f"/api/users/training/accounts/{self.account.id}/forex/positions/{position_id}/edit/",
+            {"lots": "0.20", "leverageAtOpen": 200, "entryMidPrice": "1.08550",
+             "reason": "Correct open trade details"}, format="json",
+        )
+        self.assertEqual(response.status_code, 200, response.data)
+        position = ForexPosition.objects.get(pk=position_id)
+        self.assertEqual(position.lots, Decimal("0.2000"))
+        self.assertEqual(position.leverage_at_open, 200)
+        self.assertEqual(position.margin_used, Decimal("108.55"))
+        self.assertEqual(ForexDemoWallet.objects.get(account=self.account).balance, wallet_before)
+        self.assertEqual(position.status, "OPEN")
+
     def test_non_manager_cannot_correct_a_trade(self):
         self.client.force_authenticate(user=self.trainee)
         response = self.client.patch(
