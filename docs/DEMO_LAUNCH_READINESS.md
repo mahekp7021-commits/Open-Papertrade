@@ -25,3 +25,17 @@ This repository is an educational paper-trading platform. It must use virtual fu
 ## Release gate
 
 Do not call the demo production-ready or share it as a working live WebTrader until the backend is reachable and the end-to-end checklist above passes. A successful GitHub Pages build alone is not sufficient.
+
+## Hosted backend deployment starter (Render)
+
+A starter Render Blueprint is included at the repository root in `render.yaml`. It deploys only the Django API; it does not deploy the Next.js frontend or automatically provision a database.
+
+1. In Render, create a Blueprint from this repository and review the service settings before deploying.
+2. Set `DATABASE_URL` to a persistent PostgreSQL connection string (the Django settings require it when `DEBUG=False`). Keep the database credentials private.
+3. Set `CORS_ALLOWED_ORIGINS` to the exact browser origin(s) that will serve the frontend, comma-separated, with no trailing slash. For a GitHub Pages project site, verify the actual published origin first; the path is not part of the origin.
+4. Confirm `ALLOWED_HOSTS` matches the actual API hostname. If Render assigns a different service hostname, update it before relying on the deployment.
+5. Deploy and check `/api/` on the API hostname. Then create the manager account through a secure server-side/admin process; never commit credentials.
+6. Configure the frontend's browser API base URL to the deployed API origin plus `/api`. A GitHub Pages static export cannot run the Next.js server-side rewrite in `frontend-ui/next.config.ts`; the browser must call the API directly and the API must allow the frontend origin.
+7. Test login, manager-only trainee account controls, virtual balance/leverage updates, simulated open/close, P/L, correction audit history and account isolation before sharing the demo.
+
+**Important:** this blueprint is a deployment starting point, not proof of a live service. A successful build does not mean the API/database is deployed. Use virtual funds and simulated orders only; do not add payment, bank, broker-login or real-order integrations.
