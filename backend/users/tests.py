@@ -829,7 +829,7 @@ class TrainerCorrectionApiTests(TestCase):
         for invalid_quote in ("NaN", "Infinity", "0", "-1"):
             with self.subTest(invalid_quote=invalid_quote):
                 response = self.client.post(
-                    self.snapshot_url, {"quotes": {"EURUSD": invalid_quote}}, format="json",
+                    f"/api/users/training/accounts/{self.account.id}/forex/snapshot/", {"quotes": {"EURUSD": invalid_quote}}, format="json",
                 )
                 self.assertEqual(response.status_code, 400, response.data)
                 self.assertEqual(ForexPosition.objects.get(pk=position_id).status, "OPEN")
