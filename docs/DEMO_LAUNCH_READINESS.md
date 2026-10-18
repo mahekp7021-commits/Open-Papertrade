@@ -39,3 +39,12 @@ A starter Render Blueprint is included at the repository root in `render.yaml`. 
 7. Test login, manager-only trainee account controls, virtual balance/leverage updates, simulated open/close, P/L, correction audit history and account isolation before sharing the demo.
 
 **Important:** this blueprint is a deployment starting point, not proof of a live service. A successful build does not mean the API/database is deployed. Use virtual funds and simulated orders only; do not add payment, bank, broker-login or real-order integrations.
+
+
+## Budget guardrails for the initial test deployment
+
+- Both Render web services in `render.yaml` explicitly use `plan: free`; review the Blueprint before approving any deployment and do not upgrade a service or enable paid add-ons.
+- Render free web services can sleep after 15 minutes idle and may take about a minute to wake. Their local files are ephemeral, so SQLite must not be used for trainee records.
+- Do **not** use Render's free Postgres for long-term trainee data: Render documents that its free Postgres expires after 30 days. Use a persistent external PostgreSQL provider's free tier only after reviewing its inactivity, storage, and backup limits.
+- Supabase's free database may pause after one week of inactivity and includes limited storage/no automatic backups. Keep the first deployment strictly for testing and do not store important real-world personal data.
+- A $0 deployment is best-effort, not guaranteed uptime or permanent storage. Check current provider terms and billing settings before activating anything.
