@@ -107,6 +107,28 @@ class ForexApiIntegrationTests(TestCase):
         wallet = ForexDemoWallet.objects.get(account=self.account)
         self.assertEqual(wallet.balance, Decimal("100009.00"))
 
+    def test_disabled_account_cannot_open_position(self):
+        self.account.is_enabled = False
+        self.account.save(update_fields=["is_enabled"])
+        self.authenticate(self.manager)
+        response = self.client.post(self.open_url, {
+            "symbol": "EURUSD", "side": "BUY", "lots": "0.01",
+            "midPrice": "1.08500", "reason": "Disabled account test",
+        }, format="json")
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("disabled", response.data["error"].lower())
+        self.assertEqual(ForexPosition.objects.count(), 0)
+
+    def test_rejects_unsupported_quote_currency_pair(self):
+        self.authenticate(self.manager)
+        response = self.client.post(self.open_url, {
+            "symbol": "EURGBP", "side": "BUY", "lots": "0.01",
+            "midPrice": "0.85000", "reason": "Unsupported pair test",
+        }, format="json")
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("USD-quoted", response.data["error"])
+        self.assertEqual(ForexPosition.objects.count(), 0)
+
     def test_insufficient_margin_rejects_position(self):
         self.trainee_user.initial_balance = Decimal("1.00")
         self.trainee_user.buying_power = Decimal("1.00")
