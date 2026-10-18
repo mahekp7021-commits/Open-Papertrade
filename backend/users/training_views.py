@@ -39,7 +39,7 @@ def _account_payload(account):
         "email": user.email,
         "role": account.role,
         "enabled": account.is_enabled,
-        "demoBalance": str(user.buying_power),
+        "demoBalance": str(account.forex_wallet.balance if hasattr(account, "forex_wallet") else user.buying_power),
         "initialBalance": str(user.initial_balance),
         "leverage": config.leverage,
         "spreadPips": str(config.spread_pips),
