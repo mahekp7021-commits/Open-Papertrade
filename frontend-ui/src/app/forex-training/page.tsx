@@ -234,6 +234,8 @@ export default function ForexTrainingPage() {
     if (entryMidValue === null) return;
     const leverageValue = window.prompt("Leverage at open (number only, e.g. 400)", String(position.leverage));
     if (leverageValue === null) return;
+    const spreadValue = window.prompt("Spread in pips at open", position.spreadPips || "1");
+    if (spreadValue === null) return;
     const openedValue = window.prompt("Opened at (ISO date/time)", position.openedAt);
     if (openedValue === null) return;
     let closeMidPrice: string | undefined;
@@ -251,7 +253,7 @@ export default function ForexTrainingPage() {
     const payload: Record<string, string> = {
       symbol: symbolValue.trim().toUpperCase(), side: sideValue.trim().toUpperCase(),
       lots: lotsValue.trim(), entryMidPrice: entryMidValue.trim(),
-      leverageAtOpen: leverageValue.trim(), openedAt: openedValue.trim(), reason: correctionReason.trim()
+      leverageAtOpen: leverageValue.trim(), spreadPips: spreadValue.trim(), openedAt: openedValue.trim(), reason: correctionReason.trim()
     };
     if (closeMidPrice) payload.closeMidPrice = closeMidPrice;
     if (closedAt) payload.closedAt = closedAt;
