@@ -231,7 +231,7 @@ class ForexClosePositionView(APIView):
         if mid <= 0 or not reason:
             return Response({"error": "Positive midPrice and a close reason are required."}, status=400)
         config, _ = TrainerTradingConfig.objects.get_or_create(account=account)
-        pnl, exit_price = _pnl(position, mid, config.spread_pips)
+        pnl, exit_price = _pnl(position, mid, position.spread_pips_at_open)
         wallet = _wallet(account)
         wallet.balance = (wallet.balance + pnl).quantize(CENT, rounding=ROUND_HALF_UP)
         wallet.save(update_fields=["balance", "updated_at"])
@@ -246,7 +246,7 @@ class ForexClosePositionView(APIView):
             account=account, position=position, actor=actor, event_type="CLOSE",
             symbol=position.symbol, side=position.side, lots=position.lots,
             price=exit_price, pnl=pnl, margin_used=position.margin_used,
-            reason=reason, details={"midPrice": str(mid), "spreadPips": str(config.spread_pips)},
+            reason=reason, details={"midPrice": str(mid), "spreadPips": str(position.spread_pips_at_open)},
         )
         TrainingAuditEvent.objects.create(
             actor=actor, account=account, action="FOREX_DEMO_CLOSE", reason=reason,
