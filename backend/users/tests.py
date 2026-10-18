@@ -107,6 +107,37 @@ class ForexApiIntegrationTests(TestCase):
         wallet = ForexDemoWallet.objects.get(account=self.account)
         self.assertEqual(wallet.balance, Decimal("100009.00"))
 
+    def test_snapshot_aggregates_multiple_open_positions_and_margin(self):
+        self.authenticate(self.manager)
+        first = self.client.post(self.open_url, {
+            "symbol": "EURUSD", "side": "BUY", "lots": "0.10",
+            "midPrice": "1.08500", "reason": "Open first simulated position",
+        }, format="json")
+        self.assertEqual(first.status_code, 201, first.data)
+
+        second = self.client.post(self.open_url, {
+            "symbol": "GBPUSD", "side": "SELL", "lots": "0.20",
+            "midPrice": "1.27000", "quotes": {"EURUSD": "1.08500"},
+            "reason": "Open second simulated position",
+        }, format="json")
+        self.assertEqual(second.status_code, 201, second.data)
+
+        snapshot = self.client.post(self.snapshot_url, {
+            "quotes": {"EURUSD": "1.08600", "GBPUSD": "1.26900"},
+        }, format="json")
+        self.assertEqual(snapshot.status_code, 200, snapshot.data)
+        self.assertEqual(snapshot.data["usedMargin"], "362.50")
+        self.assertEqual(snapshot.data["unrealizedPnl"], "27.00")
+        self.assertEqual(len(snapshot.data["positions"]), 2)
+        self.assertEqual(
+            Decimal(snapshot.data["equity"]),
+            Decimal(snapshot.data["balance"]) + Decimal("27.00"),
+        )
+        self.assertEqual(
+            Decimal(snapshot.data["freeMargin"]),
+            Decimal(snapshot.data["equity"]) - Decimal("362.50"),
+        )
+
     def test_open_position_keeps_original_spread_after_account_config_changes(self):
         self.authenticate(self.manager)
         opened = self.client.post(self.open_url, {
