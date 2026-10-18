@@ -331,7 +331,7 @@ export default function ForexTrainingPage() {
                 </div>
               </section>
             </>
-          <p className="mt-6 text-xs text-[var(--text-muted)]">Educational demo only · Manual or daily reference prices · USD-quoted pairs only · Not connected to a live broker or financial account.</p>
+          <p className="mt-6 text-xs text-[var(--text-muted)]">{ "Educational demo only · Manual or daily reference prices · USD-quoted pairs only · Not connected to a live broker or financial account." }</p>
         </div>
       </main>
     </div>
