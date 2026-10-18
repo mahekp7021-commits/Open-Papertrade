@@ -155,11 +155,38 @@ class TrainingAccountDetailView(APIView):
             if getattr(user, field) != value:
                 setattr(user, field, value)
                 profile_changes[field] = value
+        if "password" in data and str(data.get("password", "")):
+            new_password = str(data["password"])
+            if len(new_password) < 12:
+                return Response({"error": "Password must be at least 12 characters."}, status=status.HTTP_400_BAD_REQUEST)
+            user.set_password(new_password)
+            profile_changes["password"] = "reset"
         if profile_changes:
             user.save()
             TrainingAuditEvent.objects.create(actor=actor, account=account, action="TRAINEE_PROFILE_UPDATED",
                 reason=str(data.get("reason", "Manager corrected trainee registration details."))[:5000],
                 details={"before": profile_before, "changed": profile_changes})
+        if "demoBalance" in data:
+            try:
+                new_balance = Decimal(str(data["demoBalance"]))
+            except (InvalidOperation, ValueError, TypeError):
+                return Response({"error": "demoBalance must be a valid number."}, status=status.HTTP_400_BAD_REQUEST)
+            if not new_balance.is_finite() or new_balance < 0:
+                return Response({"error": "demoBalance must be a finite non-negative number."}, status=status.HTTP_400_BAD_REQUEST)
+            new_balance = new_balance.quantize(Decimal("0.01"))
+            old_balance = user.buying_power
+            user.buying_power = new_balance
+            user.save(update_fields=["buying_power", "updated_at"])
+            from .models import ForexDemoWallet
+            wallet, _ = ForexDemoWallet.objects.get_or_create(account=account, defaults={"balance": user.initial_balance})
+            old_forex_balance = wallet.balance
+            wallet.balance = new_balance
+            wallet.save(update_fields=["balance", "updated_at"])
+            TrainingAuditEvent.objects.create(actor=actor, account=account, action="VIRTUAL_BALANCE_ADJUSTED",
+                reason=str(data.get("reason", "Trainer adjusted virtual demo balance."))[:5000],
+                details={"paper_balance_before": str(old_balance), "paper_balance_after": str(new_balance),
+                         "forex_wallet_before": str(old_forex_balance), "forex_wallet_after": str(new_balance),
+                         "virtual_only": True})
         if "enabled" in data:
             account.is_enabled = bool(data["enabled"])
             account.save(update_fields=["is_enabled", "updated_at"])
