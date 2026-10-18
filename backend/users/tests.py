@@ -851,3 +851,28 @@ class TrainerCorrectionApiTests(TestCase):
         self.assertEqual(TrainingAuditEvent.objects.filter(account=self.account, action="FOREX_DEMO_OPEN").count(), 0)
         wallet.refresh_from_db()
         self.assertEqual(wallet.balance, Decimal("10.00"))
+
+
+    def test_close_rejects_invalid_prices_without_changing_virtual_ledger(self):
+        self.client.force_authenticate(user=self.manager)
+        opened = self.client.post(self.open_url, {
+            "symbol": "EURUSD", "side": "BUY", "lots": "0.10",
+            "midPrice": "1.08500", "reason": "Open for invalid close price test",
+        }, format="json")
+        self.assertEqual(opened.status_code, 201, opened.data)
+        position_id = opened.data["positionId"]
+        wallet_before = ForexDemoWallet.objects.get(account=self.account).balance
+        events_before = ForexTrade.objects.filter(position_id=position_id).count()
+        close_url = f"/api/users/training/accounts/{self.account.id}/forex/positions/{position_id}/close/"
+
+        for invalid_price in ("NaN", "Infinity", "0", "-1"):
+            with self.subTest(invalid_price=invalid_price):
+                response = self.client.post(close_url, {
+                    "midPrice": invalid_price, "reason": "Invalid close price must not apply",
+                }, format="json")
+                self.assertEqual(response.status_code, 400, response.data)
+                position = ForexPosition.objects.get(pk=position_id)
+                self.assertEqual(position.status, "OPEN")
+                self.assertIsNone(position.close_price)
+                self.assertEqual(ForexDemoWallet.objects.get(account=self.account).balance, wallet_before)
+                self.assertEqual(ForexTrade.objects.filter(position_id=position_id).count(), events_before)
