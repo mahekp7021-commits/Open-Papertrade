@@ -409,6 +409,21 @@ class TrainerCorrectionApiTests(TestCase):
         self.assertTrue(ForexTrade.objects.filter(position_id=position_id, event_type="CORRECTION").exists())
         self.assertTrue(TrainingAuditEvent.objects.filter(account=self.account, action="FOREX_DEMO_POSITION_CORRECTED").exists())
 
+
+    def test_invalid_trading_config_rolls_back_profile_and_balance_changes(self):
+        response = self.client.patch(self.account_url, {
+            "name": "Must Not Persist", "demoBalance": "5000.00",
+            "leverage": 200, "stopOutLevelPercent": 90, "marginCallLevelPercent": 50,
+            "reason": "Deliberately invalid combined patch",
+        }, format="json")
+        self.assertEqual(response.status_code, 400)
+        self.trainee.refresh_from_db()
+        self.assertEqual(self.trainee.name, "Correction Trainee")
+        self.assertEqual(self.trainee.buying_power, Decimal("100000.00"))
+        config = TrainerTradingConfig.objects.get(account=self.account)
+        self.assertEqual(config.leverage, 100)
+        self.assertFalse(ForexDemoWallet.objects.filter(account=self.account).exists())
+
     def test_non_manager_cannot_correct_a_trade(self):
         self.client.force_authenticate(user=self.trainee)
         response = self.client.patch(
