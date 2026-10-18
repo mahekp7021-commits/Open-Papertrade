@@ -811,3 +811,43 @@ class TrainerCorrectionApiTests(TestCase):
             {"reason": "Should be blocked"}, format="json",
         )
         self.assertEqual(response.status_code, 403)
+
+
+    def test_snapshot_rejects_invalid_quotes_without_changing_positions_wallet_or_history(self):
+        self.authenticate(self.manager)
+        opened = self.client.post(self.open_url, {
+            "symbol": "EURUSD", "side": "BUY", "lots": "0.10",
+            "midPrice": "1.08500", "reason": "Open for invalid quote safety test",
+        }, format="json")
+        self.assertEqual(opened.status_code, 201, opened.data)
+        position_id = opened.data["positionId"]
+        wallet = ForexDemoWallet.objects.get(account=self.account)
+        wallet.balance = Decimal("40.00")
+        wallet.save(update_fields=["balance", "updated_at"])
+        original_events = ForexTrade.objects.filter(account=self.account).count()
+
+        for invalid_quote in ("NaN", "Infinity", "0", "-1"):
+            with self.subTest(invalid_quote=invalid_quote):
+                response = self.client.post(
+                    self.snapshot_url, {"quotes": {"EURUSD": invalid_quote}}, format="json",
+                )
+                self.assertEqual(response.status_code, 400, response.data)
+                self.assertEqual(ForexPosition.objects.get(pk=position_id).status, "OPEN")
+                self.assertEqual(ForexDemoWallet.objects.get(account=self.account).balance, Decimal("40.00"))
+                self.assertEqual(ForexTrade.objects.filter(account=self.account).count(), original_events)
+                self.assertFalse(ForexTrade.objects.filter(account=self.account, event_type="STOP_OUT").exists())
+
+    def test_open_position_rejects_insufficient_free_margin_without_writing_history(self):
+        self.authenticate(self.manager)
+        wallet = ForexDemoWallet.objects.create(account=self.account, balance=Decimal("10.00"))
+        response = self.client.post(self.open_url, {
+            "symbol": "EURUSD", "side": "BUY", "lots": "0.10",
+            "midPrice": "1.08500", "reason": "This position should exceed virtual free margin",
+        }, format="json")
+        self.assertEqual(response.status_code, 400, response.data)
+        self.assertIn("Insufficient free margin", response.data["error"])
+        self.assertEqual(ForexPosition.objects.filter(account=self.account).count(), 0)
+        self.assertEqual(ForexTrade.objects.filter(account=self.account).count(), 0)
+        self.assertEqual(TrainingAuditEvent.objects.filter(account=self.account, action="FOREX_DEMO_OPEN").count(), 0)
+        wallet.refresh_from_db()
+        self.assertEqual(wallet.balance, Decimal("10.00"))
