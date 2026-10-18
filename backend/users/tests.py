@@ -469,6 +469,29 @@ class TrainerCorrectionApiTests(TestCase):
         self.assertEqual(ForexDemoWallet.objects.get(account=self.account).balance, wallet_before)
         self.assertEqual(position.status, "OPEN")
 
+    def test_snapshot_recalculates_margin_and_free_margin_after_open_trade_edit(self):
+        opened = self.client.post(self.open_url, {
+            "symbol": "EURUSD", "side": "BUY", "lots": "0.10",
+            "midPrice": "1.08500", "reason": "Open margin snapshot test",
+        }, format="json")
+        self.assertEqual(opened.status_code, 201, opened.data)
+        position_id = opened.data["positionId"]
+        edit = self.client.patch(
+            f"/api/users/training/accounts/{self.account.id}/forex/positions/{position_id}/edit/",
+            {"lots": "0.20", "leverageAtOpen": 200, "entryMidPrice": "1.08550",
+             "reason": "Correct margin for classroom example"}, format="json",
+        )
+        self.assertEqual(edit.status_code, 200, edit.data)
+        snapshot = self.client.post(
+            f"/api/users/training/accounts/{self.account.id}/forex/snapshot/",
+            {"quotes": {"EURUSD": "1.08600"}}, format="json",
+        )
+        self.assertEqual(snapshot.status_code, 200, snapshot.data)
+        self.assertEqual(snapshot.data["usedMargin"], "108.55")
+        self.assertEqual(snapshot.data["balance"], "100000.00")
+        self.assertEqual(snapshot.data["equity"], str(Decimal("100000.00") + Decimal(snapshot.data["unrealizedPnl"])))
+        self.assertEqual(snapshot.data["freeMargin"], str((Decimal(snapshot.data["equity"]) - Decimal("108.55")).quantize(Decimal("0.01"))))
+
     def test_non_manager_cannot_correct_a_trade(self):
         self.client.force_authenticate(user=self.trainee)
         response = self.client.patch(
