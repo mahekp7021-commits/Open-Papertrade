@@ -338,3 +338,79 @@ class TeachingBoardApiTests(TestCase):
             response = self.client.post(self.list_url, payload, format="json")
             self.assertEqual(response.status_code, 400)
         self.assertEqual(TeachingBoardTrade.objects.count(), 0)
+
+
+class TrainerCorrectionApiTests(TestCase):
+    def setUp(self):
+        self.client = APIClient()
+        self.manager = UserProfile.objects.create(
+            name="Correction Manager", username="correction-manager", email="correction-manager@example.test",
+            is_admin=True, initial_balance=Decimal("100000.00"), buying_power=Decimal("100000.00"),
+        )
+        self.trainee = UserProfile.objects.create(
+            name="Correction Trainee", username="correction-trainee", email="correction-trainee@example.test",
+            is_admin=False, initial_balance=Decimal("100000.00"), buying_power=Decimal("100000.00"),
+        )
+        self.account = TrainingAccount.objects.create(user=self.trainee, created_by=self.manager, role="TRAINEE")
+        TrainerTradingConfig.objects.create(account=self.account, leverage=100, spread_pips=Decimal("1.000"))
+        self.client.force_authenticate(user=self.manager)
+        self.account_url = f"/api/users/training/accounts/{self.account.id}/"
+        self.open_url = f"/api/users/training/accounts/{self.account.id}/forex/open/"
+
+    def test_manager_can_edit_profile_balance_and_leverage(self):
+        response = self.client.patch(self.account_url, {
+            "name": "Corrected Trainee", "username": "corrected-trainee",
+            "email": "corrected-trainee@example.test", "demoBalance": "25000.50",
+            "leverage": 200, "enabled": True, "reason": "Correct test profile",
+        }, format="json")
+        self.assertEqual(response.status_code, 200, response.data)
+        self.trainee.refresh_from_db()
+        self.assertEqual(self.trainee.name, "Corrected Trainee")
+        self.assertEqual(self.trainee.buying_power, Decimal("25000.50"))
+        self.assertEqual(TrainerTradingConfig.objects.get(account=self.account).leverage, 200)
+        self.assertEqual(ForexDemoWallet.objects.get(account=self.account).balance, Decimal("25000.50"))
+        self.assertTrue(TrainingAuditEvent.objects.filter(account=self.account, action="VIRTUAL_BALANCE_ADJUSTED").exists())
+
+    def test_invalid_account_patch_rolls_back_profile_change(self):
+        response = self.client.patch(self.account_url, {
+            "name": "Must Roll Back", "demoBalance": "not-a-balance",
+        }, format="json")
+        self.assertEqual(response.status_code, 400)
+        self.trainee.refresh_from_db()
+        self.assertEqual(self.trainee.name, "Correction Trainee")
+
+    def test_closed_trade_correction_reconciles_wallet_and_preserves_original_events(self):
+        opened = self.client.post(self.open_url, {
+            "symbol": "EURUSD", "side": "BUY", "lots": "0.10",
+            "midPrice": "1.08500", "reason": "Open before correction",
+        }, format="json")
+        self.assertEqual(opened.status_code, 201, opened.data)
+        position_id = opened.data["positionId"]
+        close_url = f"/api/users/training/accounts/{self.account.id}/forex/positions/{position_id}/close/"
+        closed = self.client.post(close_url, {
+            "midPrice": "1.08600", "reason": "Close before correction",
+        }, format="json")
+        self.assertEqual(closed.status_code, 200, closed.data)
+        original_wallet = ForexDemoWallet.objects.get(account=self.account).balance
+        original_event_count = ForexTrade.objects.filter(position_id=position_id).count()
+        edit_url = f"/api/users/training/accounts/{self.account.id}/forex/positions/{position_id}/edit/"
+        corrected = self.client.patch(edit_url, {
+            "entryMidPrice": "1.08400", "closeMidPrice": "1.08600",
+            "reason": "Correct entry for training example",
+        }, format="json")
+        self.assertEqual(corrected.status_code, 200, corrected.data)
+        position = ForexPosition.objects.get(pk=position_id)
+        wallet = ForexDemoWallet.objects.get(account=self.account)
+        self.assertEqual(position.realized_pnl, Decimal("19.00"))
+        self.assertEqual(wallet.balance, original_wallet + Decimal("10.00"))
+        self.assertEqual(ForexTrade.objects.filter(position_id=position_id).count(), original_event_count + 1)
+        self.assertTrue(ForexTrade.objects.filter(position_id=position_id, event_type="CORRECTION").exists())
+        self.assertTrue(TrainingAuditEvent.objects.filter(account=self.account, action="FOREX_DEMO_POSITION_CORRECTED").exists())
+
+    def test_non_manager_cannot_correct_a_trade(self):
+        self.client.force_authenticate(user=self.trainee)
+        response = self.client.patch(
+            f"/api/users/training/accounts/{self.account.id}/forex/positions/999/edit/",
+            {"reason": "Should be blocked"}, format="json",
+        )
+        self.assertEqual(response.status_code, 403)
