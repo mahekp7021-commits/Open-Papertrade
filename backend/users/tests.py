@@ -876,3 +876,35 @@ class TrainerCorrectionApiTests(TestCase):
                 self.assertIsNone(position.close_price)
                 self.assertEqual(ForexDemoWallet.objects.get(account=self.account).balance, wallet_before)
                 self.assertEqual(ForexTrade.objects.filter(position_id=position_id).count(), events_before)
+
+
+    def test_closed_trade_correction_rejects_close_time_before_open_time(self):
+        opened = self.client.post(self.open_url, {
+            "symbol": "EURUSD", "side": "BUY", "lots": "0.10",
+            "midPrice": "1.08500", "reason": "Open before timestamp ordering test",
+        }, format="json")
+        self.assertEqual(opened.status_code, 201, opened.data)
+        position_id = opened.data["positionId"]
+        closed = self.client.post(
+            f"/api/users/training/accounts/{self.account.id}/forex/positions/{position_id}/close/",
+            {"midPrice": "1.08600", "reason": "Close before timestamp ordering test"},
+            format="json",
+        )
+        self.assertEqual(closed.status_code, 200, closed.data)
+        position_before = ForexPosition.objects.get(pk=position_id)
+        wallet_before = ForexDemoWallet.objects.get(account=self.account).balance
+        events_before = ForexTrade.objects.filter(position_id=position_id).count()
+
+        response = self.client.patch(
+            f"/api/users/training/accounts/{self.account.id}/forex/positions/{position_id}/edit/",
+            {"openedAt": "2026-10-18T12:00:00Z", "closedAt": "2026-10-17T12:00:00Z",
+             "reason": "Reject impossible trade chronology"},
+            format="json",
+        )
+        self.assertEqual(response.status_code, 400, response.data)
+        self.assertIn("earlier than openedAt", response.data["error"])
+        position_after = ForexPosition.objects.get(pk=position_id)
+        self.assertEqual(position_after.opened_at, position_before.opened_at)
+        self.assertEqual(position_after.closed_at, position_before.closed_at)
+        self.assertEqual(ForexDemoWallet.objects.get(account=self.account).balance, wallet_before)
+        self.assertEqual(ForexTrade.objects.filter(position_id=position_id).count(), events_before)
