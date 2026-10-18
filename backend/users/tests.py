@@ -107,6 +107,27 @@ class ForexApiIntegrationTests(TestCase):
         wallet = ForexDemoWallet.objects.get(account=self.account)
         self.assertEqual(wallet.balance, Decimal("100009.00"))
 
+    def test_open_position_keeps_original_spread_after_account_config_changes(self):
+        self.authenticate(self.manager)
+        opened = self.client.post(self.open_url, {
+            "symbol": "EURUSD", "side": "BUY", "lots": "0.10",
+            "midPrice": "1.08500", "reason": "Spread-at-open consistency test",
+        }, format="json")
+        self.assertEqual(opened.status_code, 201, opened.data)
+
+        config = TrainerTradingConfig.objects.get(account=self.account)
+        config.spread_pips = Decimal("10.000")
+        config.save(update_fields=["spread_pips", "updated_at"])
+
+        close_url = f"/api/users/training/accounts/{self.account.id}/forex/positions/{opened.data['positionId']}/close/"
+        closed = self.client.post(close_url, {
+            "midPrice": "1.08500", "reason": "Close using original spread",
+        }, format="json")
+        self.assertEqual(closed.status_code, 200, closed.data)
+        self.assertEqual(closed.data["realizedPnl"], "-1.00")
+        trade = ForexTrade.objects.get(event_type="CLOSE")
+        self.assertEqual(trade.details["spreadPips"], "1.000")
+
     def test_disabled_account_cannot_open_position(self):
         self.account.is_enabled = False
         self.account.save(update_fields=["is_enabled"])
