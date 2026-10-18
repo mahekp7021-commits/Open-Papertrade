@@ -16,4 +16,18 @@ services:
       - key: DATABASE_URL
         sync: false
       - key: CORS_ALLOWED_ORIGINS
-        sync: false
+        value: https://open-papertrade-web.onrender.com
+
+  - type: web
+    name: open-papertrade-web
+    runtime: node
+    rootDir: frontend-ui
+    buildCommand: npm ci && npm run build
+    startCommand: npm run start
+    envVars:
+      - key: NODE_VERSION
+        value: "22"
+      - key: NEXT_PUBLIC_API_URL
+        value: https://open-papertrade-api.onrender.com/api
+      - key: BACKEND_URL
+        value: https://open-papertrade-api.onrender.com
