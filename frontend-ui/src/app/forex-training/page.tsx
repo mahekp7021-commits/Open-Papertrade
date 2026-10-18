@@ -8,6 +8,7 @@ const API_BASE = process.env.NEXT_PUBLIC_API_URL || "/api";
 type Account = { id: number; name: string; username: string; role: string; enabled: boolean; demoBalance: string; leverage: number; spreadPips: string; marginCallLevelPercent: string; stopOutLevelPercent: string; maxPositionSize: string };
 type Position = { id: number; symbol: string; side: string; lots: string; entryPrice: string; marginUsed: string; leverage: number; status: string; realizedPnl: string; openReason: string; closeReason: string; openedAt: string; closedAt: string | null };
 type Snapshot = { balance: string; unrealizedPnl: string; equity: string; usedMargin: string; freeMargin: string; marginLevelPercent: string | null; riskStatus: string; positions: Array<{ id: number; symbol: string; side: string; lots: string; entryPrice: string; midPrice: string | null; estimatedExitPrice: string | null; unrealizedPnl: string | null; marginUsed: string; leverageAtOpen: number; openedAt: string }> };
+type BoardCard = { id: number; accountId: number; symbol: string; side: "BUY" | "SELL"; entryPrice: string; marginAmount: string; leverage: number; lots: string; status: string; tradeTime: string; lessonTitle: string; explanation: string; createdAt: string; updatedAt: string };
 type EventRow = { id: number; eventType: string; symbol: string; side: string; lots: string; price: string; pnl: string; marginUsed: string; reason: string; actor: string | null; createdAt: string };
 
 async function api(path: string, method = "GET", body?: unknown) {
@@ -32,6 +33,18 @@ export default function ForexTrainingPage() {
   const [accountId, setAccountId] = useState("");
   const [positions, setPositions] = useState<Position[]>([]);
   const [events, setEvents] = useState<EventRow[]>([]);
+  const [boardCards, setBoardCards] = useState<BoardCard[]>([]);
+  const [editingCardId, setEditingCardId] = useState<number | null>(null);
+  const [boardSymbol, setBoardSymbol] = useState("USDJPY");
+  const [boardSide, setBoardSide] = useState<"BUY" | "SELL">("BUY");
+  const [boardPrice, setBoardPrice] = useState("150.25000");
+  const [boardMargin, setBoardMargin] = useState("500.00");
+  const [boardLeverage, setBoardLeverage] = useState("100");
+  const [boardLots, setBoardLots] = useState("0.10");
+  const [boardStatus, setBoardStatus] = useState("EXAMPLE");
+  const [boardTime, setBoardTime] = useState(new Date().toISOString().slice(0,16));
+  const [boardTitle, setBoardTitle] = useState("Entry and risk lesson");
+  const [boardExplanation, setBoardExplanation] = useState("");
   const [snapshot, setSnapshot] = useState<Snapshot | null>(null);
   const [symbol, setSymbol] = useState("EURUSD");
   const [side, setSide] = useState<"BUY" | "SELL">("BUY");
@@ -55,6 +68,12 @@ export default function ForexTrainingPage() {
     setAccountId((current: string) => current && rows.some((row: Account) => String(row.id) === current) ? current : rows[0] ? String(rows[0].id) : "");
   }, []);
 
+  const loadBoard = useCallback(async (id: string) => {
+    if (!id) { setBoardCards([]); return; }
+    const data = await api(`/users/training/accounts/${id}/teaching-board/`);
+    setBoardCards(data.cards || []);
+  }, []);
+
   const loadHistory = useCallback(async (id: string) => {
     if (!id) return;
     const data = await api(`/users/training/accounts/${id}/forex/positions/`);
@@ -67,9 +86,12 @@ export default function ForexTrainingPage() {
   }, [loadAccounts]);
 
   useEffect(() => {
-    if (accountId) loadHistory(accountId).catch((error) => setMessage({ kind: "error", text: error.message }));
+    if (accountId) {
+      loadHistory(accountId).catch((error) => setMessage({ kind: "error", text: error.message }));
+      loadBoard(accountId).catch((error) => setMessage({ kind: "error", text: error.message }));
+    }
     setSnapshot(null);
-  }, [accountId, loadHistory]);
+  }, [accountId, loadHistory, loadBoard]);
 
   const runAction = async (action: () => Promise<void>) => {
     setBusy(true); setMessage(null);
@@ -134,6 +156,32 @@ export default function ForexTrainingPage() {
     await loadHistory(accountId);
     const valuation = await api(`/users/training/accounts/${accountId}/forex/snapshot/`, "POST", { quotes });
     setSnapshot(valuation);
+  });
+
+
+  const resetBoardForm = () => { setEditingCardId(null); setBoardSymbol("USDJPY"); setBoardSide("BUY"); setBoardPrice("150.25000"); setBoardMargin("500.00"); setBoardLeverage("100"); setBoardLots("0.10"); setBoardStatus("EXAMPLE"); setBoardTime(new Date().toISOString().slice(0,16)); setBoardTitle("Entry and risk lesson"); setBoardExplanation(""); };
+
+  const saveBoardCard = () => runAction(async () => {
+    if (!accountId) throw new Error("Select a training account first.");
+    const payload = { symbol: boardSymbol, side: boardSide, entryPrice: boardPrice, marginAmount: boardMargin, leverage: boardLeverage, lots: boardLots, status: boardStatus, tradeTime: new Date(boardTime).toISOString(), lessonTitle: boardTitle, explanation: boardExplanation };
+    const path = editingCardId ? `/users/training/accounts/${accountId}/teaching-board/${editingCardId}/` : `/users/training/accounts/${accountId}/teaching-board/`;
+    await api(path, editingCardId ? "PATCH" : "POST", payload);
+    await loadBoard(accountId);
+    setMessage({ kind: "ok", text: editingCardId ? "Teaching card updated. Wallet and actual trade ledger were not changed." : "Teaching card created. This is a classroom example, not an executed trade." });
+    resetBoardForm();
+  });
+
+  const editBoardCard = (card: BoardCard) => {
+    setEditingCardId(card.id); setBoardSymbol(card.symbol); setBoardSide(card.side); setBoardPrice(card.entryPrice);
+    setBoardMargin(card.marginAmount); setBoardLeverage(String(card.leverage)); setBoardLots(card.lots); setBoardStatus(card.status);
+    setBoardTime(new Date(card.tradeTime).toISOString().slice(0,16)); setBoardTitle(card.lessonTitle); setBoardExplanation(card.explanation);
+  };
+
+  const deleteBoardCard = (card: BoardCard) => runAction(async () => {
+    await api(`/users/training/accounts/${accountId}/teaching-board/${card.id}/`, "DELETE");
+    await loadBoard(accountId);
+    if (editingCardId === card.id) resetBoardForm();
+    setMessage({ kind: "ok", text: "Teaching card removed. Actual Forex history and wallet were untouched." });
   });
 
   const closePosition = (position: Position) => runAction(async () => {
@@ -209,9 +257,36 @@ export default function ForexTrainingPage() {
                   </div>
                   <div className="mt-6 border-t border-[var(--border-muted)] pt-4"><h3 className="mb-3 text-sm font-semibold">Recent Forex events</h3><div className="space-y-2">{events.slice(0, 6).length === 0 ? <p className="text-xs text-[var(--text-secondary)]">No event history yet.</p> : events.slice(0, 6).map((event) => <div key={event.id} className="flex items-start justify-between gap-3 text-xs"><div><p className="font-medium">{event.eventType} · {event.symbol} · {event.side}</p><p className="mt-1 text-[var(--text-secondary)]">{event.reason}</p><p className="mt-1 text-[var(--text-muted)]">{event.actor || "Manager"} · {new Date(event.createdAt).toLocaleString()}</p></div><span className="shrink-0 tabular-nums">{money(event.pnl)}</span></div>)}</div></div>
                 </section>
+
               </div>
+
+              <section className={`${panel} mt-5`}>
+                <div className="mb-2 flex flex-wrap items-center justify-between gap-3">
+                  <div><div className="text-xs font-semibold uppercase tracking-[0.16em] text-[var(--accent-primary)]">Classroom mode</div><h2 className="mt-1 text-lg font-semibold">Editable teaching board</h2><p className="mt-1 max-w-3xl text-sm text-[var(--text-secondary)]">Trainer lesson examples: symbol (USDJPY, BTCUSD, USDBTC), BUY/SELL, date/time, margin, price and explanation can be edited. These cards never change the virtual wallet or executed trade history.</p></div>
+                  <span className="rounded-full border border-amber-500/30 bg-amber-500/10 px-3 py-1 text-xs text-amber-300">Teaching examples only</span>
+                </div>
+                <div className="mt-5 grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+                  <div><label className={label}>Symbol</label><input className={field} value={boardSymbol} onChange={(e) => setBoardSymbol(e.target.value.toUpperCase())} placeholder="USDJPY / BTCUSD" maxLength={12}/></div>
+                  <div><label className={label}>Side</label><select className={field} value={boardSide} onChange={(e) => setBoardSide(e.target.value as "BUY" | "SELL")}><option value="BUY">BUY</option><option value="SELL">SELL</option></select></div>
+                  <div><label className={label}>Example entry price</label><input className={field} type="number" min="0.00000001" step="any" value={boardPrice} onChange={(e) => setBoardPrice(e.target.value)}/></div>
+                  <div><label className={label}>Margin amount (display)</label><input className={field} type="number" min="0" step="0.01" value={boardMargin} onChange={(e) => setBoardMargin(e.target.value)}/></div>
+                  <div><label className={label}>Leverage</label><input className={field} type="number" min="1" max="5000" value={boardLeverage} onChange={(e) => setBoardLeverage(e.target.value)}/></div>
+                  <div><label className={label}>Lots (display)</label><input className={field} type="number" min="0.0001" step="0.01" value={boardLots} onChange={(e) => setBoardLots(e.target.value)}/></div>
+                  <div><label className={label}>Board status</label><select className={field} value={boardStatus} onChange={(e) => setBoardStatus(e.target.value)}><option value="EXAMPLE">Teaching example</option><option value="OPEN">Open example</option><option value="CLOSED">Closed example</option></select></div>
+                  <div><label className={label}>Trade date & time</label><input className={field} type="datetime-local" value={boardTime} onChange={(e) => setBoardTime(e.target.value)}/></div>
+                  <div className="md:col-span-2 xl:col-span-4"><label className={label}>Lesson title</label><input className={field} value={boardTitle} onChange={(e) => setBoardTitle(e.target.value)} maxLength={160} placeholder="Example: USDJPY breakout setup"/></div>
+                  <div className="md:col-span-2 xl:col-span-4"><label className={label}>Trainer explanation / correction</label><textarea className={`${field} min-h-20`} value={boardExplanation} onChange={(e) => setBoardExplanation(e.target.value)} maxLength={10000} placeholder="Explain why entry, side, margin or timing is being demonstrated."/></div>
+                </div>
+                <div className="mt-4 flex flex-wrap gap-2"><button onClick={saveBoardCard} disabled={busy || !accountId} className="rounded-xl bg-[var(--accent-primary)] px-4 py-2.5 text-sm font-semibold text-white disabled:opacity-50">{busy ? "Saving…" : editingCardId ? "Save teaching card" : "Add teaching card"}</button>{editingCardId && <button onClick={resetBoardForm} disabled={busy} className="rounded-xl border border-[var(--border-muted)] px-4 py-2.5 text-sm">Cancel edit</button>}</div>
+                <div className="mt-6 grid gap-3 lg:grid-cols-2">
+                  {boardCards.length === 0 ? <p className="rounded-xl border border-dashed border-[var(--border-muted)] p-4 text-sm text-[var(--text-secondary)]">No teaching cards yet. Create one above to use this page as a class board.</p> : boardCards.map((card) => <article key={card.id} className="rounded-xl border border-[var(--border-muted)] bg-[var(--bg-card-inner)] p-4">
+                    <div className="flex flex-wrap items-start justify-between gap-3"><div><div className="flex flex-wrap items-center gap-2"><h3 className="text-lg font-semibold">{card.symbol}</h3><span className={`rounded-md px-2 py-1 text-xs font-semibold ${card.side === "BUY" ? "bg-emerald-500/10 text-emerald-400" : "bg-red-500/10 text-red-400"}`}>{card.side}</span><span className="rounded-md bg-amber-500/10 px-2 py-1 text-xs text-amber-300">{card.status === "EXAMPLE" ? "TEACHING EXAMPLE" : card.status}</span></div><p className="mt-2 text-sm font-medium">{card.lessonTitle || "Untitled lesson"}</p><p className="mt-1 text-xs text-[var(--text-secondary)]">{new Date(card.tradeTime).toLocaleString()}</p></div><div className="flex gap-2"><button onClick={() => editBoardCard(card)} className="rounded-lg border border-[var(--border-muted)] px-3 py-2 text-xs">Edit</button><button onClick={() => deleteBoardCard(card)} disabled={busy} className="rounded-lg border border-red-500/30 px-3 py-2 text-xs text-red-400 disabled:opacity-50">Delete</button></div></div>
+                    <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-4"><div><p className="text-xs text-[var(--text-secondary)]">Example price</p><p className="mt-1 font-medium tabular-nums">{card.entryPrice}</p></div><div><p className="text-xs text-[var(--text-secondary)]">Margin</p><p className="mt-1 font-medium">{money(card.marginAmount)}</p></div><div><p className="text-xs text-[var(--text-secondary)]">Leverage</p><p className="mt-1 font-medium">1:{card.leverage}</p></div><div><p className="text-xs text-[var(--text-secondary)]">Lots</p><p className="mt-1 font-medium">{card.lots}</p></div></div>
+                    {card.explanation && <p className="mt-3 whitespace-pre-wrap text-sm text-[var(--text-secondary)]">{card.explanation}</p>}
+                  </article>)}
+                </div>
+              </section>
             </>
-          )}
           <p className="mt-6 text-xs text-[var(--text-muted)]">Educational demo only · Manual or daily reference prices · USD-quoted pairs only · Not connected to a live broker or financial account.</p>
         </div>
       </main>
