@@ -180,6 +180,32 @@ class ForexApiIntegrationTests(TestCase):
             ForexPosition.objects.get(pk=opened.data["positionId"]).status, "OPEN",
         )
 
+    def test_account_symbol_allowlist_is_enforced(self):
+        config = TrainerTradingConfig.objects.get(account=self.account)
+        config.allowed_symbols = ["GBPUSD"]
+        config.save(update_fields=["allowed_symbols", "updated_at"])
+        self.authenticate(self.manager)
+        response = self.client.post(self.open_url, {
+            "symbol": "EURUSD", "side": "BUY", "lots": "0.01",
+            "midPrice": "1.08500", "reason": "Symbol allowlist test",
+        }, format="json")
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("not allowed", response.data["error"])
+        self.assertEqual(ForexPosition.objects.count(), 0)
+
+    def test_account_leverage_controls_required_margin(self):
+        config = TrainerTradingConfig.objects.get(account=self.account)
+        config.leverage = 50
+        config.save(update_fields=["leverage", "updated_at"])
+        self.authenticate(self.manager)
+        response = self.client.post(self.open_url, {
+            "symbol": "EURUSD", "side": "BUY", "lots": "0.10",
+            "midPrice": "1.08500", "reason": "Leverage margin test",
+        }, format="json")
+        self.assertEqual(response.status_code, 201, response.data)
+        self.assertEqual(response.data["leverage"], 50)
+        self.assertEqual(response.data["marginUsed"], "217.00")
+
     def test_insufficient_margin_rejects_position(self):
         self.trainee_user.initial_balance = Decimal("1.00")
         self.trainee_user.buying_power = Decimal("1.00")
