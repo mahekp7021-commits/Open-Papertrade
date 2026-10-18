@@ -448,6 +448,29 @@ class TrainerCorrectionApiTests(TestCase):
         self.assertEqual(ForexPosition.objects.get(pk=position_id).realized_pnl, position_before)
         self.assertEqual(ForexTrade.objects.filter(position_id=position_id).count(), event_count_before)
 
+    def test_closed_trade_pnl_change_requires_close_mid_price(self):
+        opened = self.client.post(self.open_url, {
+            "symbol": "EURUSD", "side": "BUY", "lots": "0.10",
+            "midPrice": "1.08500", "reason": "Open closed-trade close quote test",
+        }, format="json")
+        self.assertEqual(opened.status_code, 201, opened.data)
+        position_id = opened.data["positionId"]
+        closed = self.client.post(
+            f"/api/users/training/accounts/{self.account.id}/forex/positions/{position_id}/close/",
+            {"midPrice": "1.08600", "reason": "Close for quote validation"}, format="json",
+        )
+        self.assertEqual(closed.status_code, 200, closed.data)
+        wallet_before = ForexDemoWallet.objects.get(account=self.account).balance
+        event_count_before = ForexTrade.objects.filter(position_id=position_id).count()
+        response = self.client.patch(
+            f"/api/users/training/accounts/{self.account.id}/forex/positions/{position_id}/edit/",
+            {"entryMidPrice": "1.08400", "reason": "Change entry but omit close quote"}, format="json",
+        )
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("closeMidPrice", response.data["error"])
+        self.assertEqual(ForexDemoWallet.objects.get(account=self.account).balance, wallet_before)
+        self.assertEqual(ForexTrade.objects.filter(position_id=position_id).count(), event_count_before)
+
     def test_open_trade_correction_updates_margin_without_realizing_pnl(self):
         opened = self.client.post(self.open_url, {
             "symbol": "EURUSD", "side": "BUY", "lots": "0.10",
