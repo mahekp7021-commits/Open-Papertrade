@@ -252,6 +252,37 @@ class ForexApiIntegrationTests(TestCase):
             account=self.account, action="FOREX_DEMO_STOP_OUT",
         ).exists())
 
+    def test_snapshot_missing_quote_does_not_partially_stop_out_positions(self):
+        self.authenticate(self.manager)
+        first = self.client.post(self.open_url, {
+            "symbol": "EURUSD", "side": "BUY", "lots": "0.10",
+            "midPrice": "1.08500", "reason": "First missing-quote guard position",
+        }, format="json")
+        self.assertEqual(first.status_code, 201, first.data)
+        second = self.client.post(self.open_url, {
+            "symbol": "GBPUSD", "side": "SELL", "lots": "0.20",
+            "midPrice": "1.27000", "quotes": {"EURUSD": "1.08500"},
+            "reason": "Second missing-quote guard position",
+        }, format="json")
+        self.assertEqual(second.status_code, 201, second.data)
+
+        wallet = ForexDemoWallet.objects.get(account=self.account)
+        wallet.balance = Decimal("40.00")
+        wallet.save(update_fields=["balance", "updated_at"])
+        response = self.client.post(self.snapshot_url, {
+            "quotes": {"EURUSD": "1.08500"},
+        }, format="json")
+        self.assertEqual(response.status_code, 200, response.data)
+        self.assertEqual(response.data["riskStatus"], "STOP_OUT_THRESHOLD_REACHED")
+        positions = ForexPosition.objects.filter(
+            pk__in=[first.data["positionId"], second.data["positionId"]],
+        )
+        self.assertEqual(positions.filter(status="OPEN").count(), 2)
+        self.assertEqual(ForexTrade.objects.filter(
+            account=self.account, event_type="STOP_OUT",
+        ).count(), 0)
+        self.assertEqual(ForexDemoWallet.objects.get(account=self.account).balance, Decimal("40.00"))
+
     def test_snapshot_reports_margin_call_without_liquidating(self):
         self.authenticate(self.manager)
         opened = self.client.post(self.open_url, {
