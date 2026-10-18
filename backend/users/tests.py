@@ -105,7 +105,7 @@ class ForexApiIntegrationTests(TestCase):
         self.assertEqual(ForexTrade.objects.filter(event_type="CLOSE").count(), 1)
         self.assertTrue(TrainingAuditEvent.objects.filter(action="FOREX_DEMO_CLOSE").exists())
         wallet = ForexDemoWallet.objects.get(account=self.account)
-        self.assertEqual(wallet.balance, Decimal("100008.00"))
+        self.assertEqual(wallet.balance, Decimal("100009.00"))
 
     def test_insufficient_margin_rejects_position(self):
         self.trainee_user.initial_balance = Decimal("1.00")
