@@ -6,7 +6,7 @@ import Sidebar from "@/components/Sidebar";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || "/api";
 type Account = { id: number; name: string; username: string; role: string; enabled: boolean; demoBalance: string; leverage: number; spreadPips: string; marginCallLevelPercent: string; stopOutLevelPercent: string; maxPositionSize: string };
-type Position = { id: number; symbol: string; side: string; lots: string; entryPrice: string; marginUsed: string; leverage: number; status: string; realizedPnl: string; openReason: string; closeReason: string; openedAt: string; closedAt: string | null };
+type Position = { id: number; symbol: string; side: string; lots: string; entryPrice: string; entryMidPrice: string; spreadPips: string; marginUsed: string; leverage: number; status: string; realizedPnl: string; openReason: string; closeReason: string; openedAt: string; closedAt: string | null };
 type Snapshot = { balance: string; unrealizedPnl: string; equity: string; usedMargin: string; freeMargin: string; marginLevelPercent: string | null; riskStatus: string; positions: Array<{ id: number; symbol: string; side: string; lots: string; entryPrice: string; midPrice: string | null; estimatedExitPrice: string | null; unrealizedPnl: string | null; marginUsed: string; leverageAtOpen: number; openedAt: string }> };
 type BoardCard = { id: number; accountId: number; symbol: string; side: "BUY" | "SELL"; entryPrice: string; marginAmount: string; leverage: number; lots: string; status: string; tradeTime: string; lessonTitle: string; explanation: string; createdAt: string; updatedAt: string };
 type EventRow = { id: number; eventType: string; symbol: string; side: string; lots: string; price: string; pnl: string; marginUsed: string; reason: string; actor: string | null; createdAt: string };
@@ -191,7 +191,7 @@ export default function ForexTrainingPage() {
     if (sideValue === null) return;
     const lotsValue = window.prompt("Lots", position.lots);
     if (lotsValue === null) return;
-    const entryMidValue = window.prompt("Entry mid-price (before spread)", position.entryPrice);
+    const entryMidValue = window.prompt("Entry mid-price (before spread)", position.entryMidPrice || position.entryPrice);
     if (entryMidValue === null) return;
     const leverageValue = window.prompt("Leverage at open (number only, e.g. 400)", String(position.leverage));
     if (leverageValue === null) return;
