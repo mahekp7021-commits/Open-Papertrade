@@ -151,6 +151,38 @@ class TrainingAccountDetailView(APIView):
             if not validated_balance.is_finite() or validated_balance < 0:
                 return Response({"error": "demoBalance must be a finite non-negative number."}, status=status.HTTP_400_BAD_REQUEST)
             validated_balance = validated_balance.quantize(Decimal("0.01"))
+        # Pre-validate every field that can reject the request before any database mutation.
+        if "password" in data and str(data.get("password", "")) and len(str(data["password"])) < 12:
+            return Response({"error": "Password must be at least 12 characters."}, status=status.HTTP_400_BAD_REQUEST)
+        config, _ = TrainerTradingConfig.objects.get_or_create(account=account)
+        config_inputs = {
+            "leverage": ("leverage", int, 1, 2000),
+            "spreadPips": ("spread_pips", Decimal, 0, None),
+            "marginCallLevelPercent": ("margin_call_level_percent", Decimal, 0.01, None),
+            "stopOutLevelPercent": ("stop_out_level_percent", Decimal, 0, None),
+            "maxPositionSize": ("max_position_size", Decimal, 0.0001, None),
+        }
+        validated_config = {}
+        for incoming, (field, converter, minimum, maximum) in config_inputs.items():
+            if incoming not in data:
+                continue
+            try:
+                value = converter(data[incoming])
+            except (InvalidOperation, ValueError, TypeError):
+                return Response({"error": f"Invalid value for {incoming}."}, status=status.HTTP_400_BAD_REQUEST)
+            if value < minimum or (maximum is not None and value > maximum):
+                return Response({"error": f"Value out of range for {incoming}."}, status=status.HTTP_400_BAD_REQUEST)
+            validated_config[field] = value
+        validated_symbols = None
+        if "allowedSymbols" in data:
+            symbols = data["allowedSymbols"]
+            if not isinstance(symbols, list) or any(not isinstance(s, str) or len(s) > 32 for s in symbols):
+                return Response({"error": "allowedSymbols must be a list of short strings."}, status=status.HTTP_400_BAD_REQUEST)
+            validated_symbols = [s.strip().upper() for s in symbols if s.strip()]
+        final_margin_call = validated_config.get("margin_call_level_percent", config.margin_call_level_percent)
+        final_stop_out = validated_config.get("stop_out_level_percent", config.stop_out_level_percent)
+        if final_stop_out > final_margin_call:
+            return Response({"error": "Stop-out level cannot exceed margin-call level."}, status=status.HTTP_400_BAD_REQUEST)
         profile_before = {"name": user.name, "username": user.username, "email": user.email}
         profile_changes = {}
         for incoming, field in (("name", "name"), ("username", "username"), ("email", "email")):
@@ -168,8 +200,6 @@ class TrainingAccountDetailView(APIView):
                 profile_changes[field] = value
         if "password" in data and str(data.get("password", "")):
             new_password = str(data["password"])
-            if len(new_password) < 12:
-                return Response({"error": "Password must be at least 12 characters."}, status=status.HTTP_400_BAD_REQUEST)
             user.set_password(new_password)
             profile_changes["password"] = "reset"
         if profile_changes:
@@ -201,34 +231,13 @@ class TrainingAccountDetailView(APIView):
                 reason=str(data.get("reason", "Manager changed account access."))[:5000],
                 details={"enabled": account.is_enabled},
             )
-        config, _ = TrainerTradingConfig.objects.get_or_create(account=account)
-        fields = {
-            "leverage": ("leverage", int, 1, 2000),
-            "spreadPips": ("spread_pips", Decimal, 0, None),
-            "marginCallLevelPercent": ("margin_call_level_percent", Decimal, 0.01, None),
-            "stopOutLevelPercent": ("stop_out_level_percent", Decimal, 0, None),
-            "maxPositionSize": ("max_position_size", Decimal, 0.0001, None),
-        }
         changed = {}
-        for incoming, (field, converter, minimum, maximum) in fields.items():
-            if incoming not in data:
-                continue
-            try:
-                value = converter(data[incoming])
-            except (InvalidOperation, ValueError, TypeError):
-                return Response({"error": f"Invalid value for {incoming}."}, status=status.HTTP_400_BAD_REQUEST)
-            if value < minimum or (maximum is not None and value > maximum):
-                return Response({"error": f"Value out of range for {incoming}."}, status=status.HTTP_400_BAD_REQUEST)
+        for field, value in validated_config.items():
             setattr(config, field, value)
             changed[field] = str(value)
-        if "allowedSymbols" in data:
-            symbols = data["allowedSymbols"]
-            if not isinstance(symbols, list) or any(not isinstance(s, str) or len(s) > 32 for s in symbols):
-                return Response({"error": "allowedSymbols must be a list of short strings."}, status=status.HTTP_400_BAD_REQUEST)
-            config.allowed_symbols = [s.strip().upper() for s in symbols if s.strip()]
+        if validated_symbols is not None:
+            config.allowed_symbols = validated_symbols
             changed["allowed_symbols"] = config.allowed_symbols
-        if config.stop_out_level_percent > config.margin_call_level_percent:
-            return Response({"error": "Stop-out level cannot exceed margin-call level."}, status=status.HTTP_400_BAD_REQUEST)
         if changed:
             config.save()
             TrainingAuditEvent.objects.create(
