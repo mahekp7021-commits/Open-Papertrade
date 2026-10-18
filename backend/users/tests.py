@@ -814,7 +814,7 @@ class TrainerCorrectionApiTests(TestCase):
 
 
     def test_snapshot_rejects_invalid_quotes_without_changing_positions_wallet_or_history(self):
-        self.authenticate(self.manager)
+        self.client.force_authenticate(user=self.manager)
         opened = self.client.post(self.open_url, {
             "symbol": "EURUSD", "side": "BUY", "lots": "0.10",
             "midPrice": "1.08500", "reason": "Open for invalid quote safety test",
@@ -838,7 +838,7 @@ class TrainerCorrectionApiTests(TestCase):
                 self.assertFalse(ForexTrade.objects.filter(account=self.account, event_type="STOP_OUT").exists())
 
     def test_open_position_rejects_insufficient_free_margin_without_writing_history(self):
-        self.authenticate(self.manager)
+        self.client.force_authenticate(user=self.manager)
         wallet = ForexDemoWallet.objects.create(account=self.account, balance=Decimal("10.00"))
         response = self.client.post(self.open_url, {
             "symbol": "EURUSD", "side": "BUY", "lots": "0.10",
