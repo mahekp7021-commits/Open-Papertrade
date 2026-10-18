@@ -72,7 +72,7 @@ def _snapshot(account, quotes):
             mid = _decimal(raw, f"Quote for {position.symbol}")
             if mid <= 0:
                 raise ValueError(f"Quote for {position.symbol} must be positive.")
-            pnl, exit_price = _pnl(position, mid, config.spread_pips)
+            pnl, exit_price = _pnl(position, mid, position.spread_pips_at_open)
             unrealized += pnl
         rows.append({
             "id": position.id, "symbol": position.symbol, "side": position.side,
@@ -123,7 +123,7 @@ class ForexAccountSnapshotView(APIView):
                 wallet = _wallet(account)
                 for position in open_positions:
                     mid = _decimal(quotes[position.symbol], f"Quote for {position.symbol}")
-                    pnl, exit_price = _pnl(position, mid, config.spread_pips)
+                    pnl, exit_price = _pnl(position, mid, position.spread_pips_at_open)
                     wallet.balance = (wallet.balance + pnl).quantize(CENT, rounding=ROUND_HALF_UP)
                     position.status = "CLOSED"
                     position.close_price = exit_price
@@ -204,7 +204,7 @@ class ForexOpenPositionView(APIView):
         ForexTrade.objects.create(
             account=account, position=position, actor=actor, event_type="OPEN",
             symbol=symbol, side=side, lots=lots, price=entry, margin_used=margin,
-            reason=reason, details={"midPrice": str(mid), "spreadPips": str(config.spread_pips), "leverage": config.leverage, "contractUnits": str(STANDARD_LOT_UNITS)},
+            reason=reason, details={"midPrice": str(mid), "spreadPips": str(position.spread_pips_at_open), "leverage": config.leverage, "contractUnits": str(STANDARD_LOT_UNITS)},
         )
         TrainingAuditEvent.objects.create(
             actor=actor, account=account, action="FOREX_DEMO_OPEN", reason=reason,
