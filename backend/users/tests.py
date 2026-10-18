@@ -1,6 +1,7 @@
 from decimal import Decimal
 
 from django.test import SimpleTestCase, TestCase
+from django.utils import timezone
 from rest_framework.test import APIClient
 
 from .forex_views import _decimal, _pnl
@@ -625,8 +626,10 @@ class TrainerCorrectionApiTests(TestCase):
         position_before = ForexPosition.objects.get(pk=position_id)
         pnl_before = position_before.realized_pnl
         edit_url = f"/api/users/training/accounts/{self.account.id}/forex/positions/{position_id}/edit/"
+        opened_at = position_before.opened_at
+        valid_closed_at = (opened_at + timezone.timedelta(minutes=5)).isoformat()
         corrected = self.client.patch(edit_url, {
-            "closedAt": "2026-10-17T12:00:00Z",
+            "closedAt": valid_closed_at,
             "reason": "Correct closing timestamp only",
         }, format="json")
         self.assertEqual(corrected.status_code, 200, corrected.data)
@@ -635,7 +638,7 @@ class TrainerCorrectionApiTests(TestCase):
         self.assertEqual(ForexDemoWallet.objects.get(account=self.account).balance, wallet_before)
         self.assertEqual(
             position_after.closed_at.isoformat(),
-            "2026-10-17T12:00:00+00:00",
+            valid_closed_at,
         )
 
     def test_correction_event_stores_before_after_and_wallet_delta(self):
