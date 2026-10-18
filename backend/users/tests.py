@@ -523,13 +523,13 @@ class TrainerCorrectionApiTests(TestCase):
         self.assertEqual(correction.status_code, 200, correction.data)
 
         event = ForexTrade.objects.get(position_id=position_id, event_type="CORRECTION")
-        self.assertEqual(event.details["before"]["entryMidPrice"], "1.08500")
-        self.assertEqual(event.details["after"]["entryMidPrice"], "1.08400")
+        self.assertEqual(Decimal(event.details["before"]["entryMidPrice"]), Decimal("1.08500"))
+        self.assertEqual(Decimal(event.details["after"]["entryMidPrice"]), Decimal("1.08400"))
         self.assertEqual(event.details["walletAdjustment"], "10.00")
         self.assertTrue(event.details["simulatedOnly"])
         audit = TrainingAuditEvent.objects.get(account=self.account, action="FOREX_DEMO_POSITION_CORRECTED")
-        self.assertEqual(audit.details["before"]["entryMidPrice"], "1.08500")
-        self.assertEqual(audit.details["after"]["entryMidPrice"], "1.08400")
+        self.assertEqual(Decimal(audit.details["before"]["entryMidPrice"]), Decimal("1.08500"))
+        self.assertEqual(Decimal(audit.details["after"]["entryMidPrice"]), Decimal("1.08400"))
         self.assertEqual(audit.details["wallet_balance"], "100019.00")
         self.assertTrue(audit.details["simulated_only"])
 
