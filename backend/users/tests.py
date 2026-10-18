@@ -411,7 +411,6 @@ class TrainerCorrectionApiTests(TestCase):
         self.assertEqual(self.trainee.name, "Correction Trainee")
 
     def test_repeated_closed_trade_corrections_reconcile_wallet_incrementally(self):
-        self.authenticate(self.manager)
         opened = self.client.post(self.open_url, {
             "symbol": "EURUSD", "side": "BUY", "lots": "0.10",
             "midPrice": "1.08500", "reason": "Open before repeated correction test",
