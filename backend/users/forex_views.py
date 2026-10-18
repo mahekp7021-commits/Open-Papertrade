@@ -281,3 +281,115 @@ class ForexPositionListView(APIView):
                 "actor": e.actor.username if e.actor else None, "createdAt": e.created_at.isoformat(),
             } for e in events],
         })
+
+
+class ForexEditPositionView(APIView):
+    """Manager-only correction of simulated trade data; prior events remain immutable."""
+
+    @transaction.atomic
+    def patch(self, request, account_id, position_id):
+        actor = _manager(request)
+        account = get_object_or_404(TrainingAccount.objects.select_related("user"), pk=account_id)
+        position = get_object_or_404(ForexPosition.objects.select_for_update(), pk=position_id, account=account)
+        data = request.data
+        reason = str(data.get("reason", "")).strip()
+        if not reason:
+            return Response({"error": "A correction reason is required for the audit trail."}, status=400)
+
+        before = {
+            "symbol": position.symbol, "side": position.side, "lots": str(position.lots),
+            "entryPrice": str(position.entry_price), "entryMidPrice": str(position.entry_mid_price),
+            "marginUsed": str(position.margin_used), "leverageAtOpen": position.leverage_at_open,
+            "openedAt": position.opened_at.isoformat(), "status": position.status,
+            "closePrice": str(position.close_price) if position.close_price is not None else None,
+            "realizedPnl": str(position.realized_pnl),
+            "closedAt": position.closed_at.isoformat() if position.closed_at else None,
+        }
+        symbol = str(data.get("symbol", position.symbol)).strip().upper()
+        side = str(data.get("side", position.side)).strip().upper()
+        if len(symbol) != 6 or not symbol.isalpha() or not symbol.endswith("USD"):
+            return Response({"error": "This accounting engine supports USD-quoted FX pairs only (e.g. EURUSD, GBPUSD)."}, status=400)
+        if side not in ("BUY", "SELL"):
+            return Response({"error": "side must be BUY or SELL."}, status=400)
+        try:
+            lots = _decimal(data.get("lots", position.lots), "lots")
+            entry_mid = _decimal(data.get("entryMidPrice", data.get("midPrice", position.entry_mid_price)), "entryMidPrice")
+            leverage = int(data.get("leverageAtOpen", position.leverage_at_open))
+            spread = _decimal(data.get("spreadPips", position.spread_pips_at_open), "spreadPips")
+            if lots <= 0 or entry_mid <= 0 or leverage <= 0 or spread < 0:
+                raise ValueError("Lots, entry price and leverage must be positive; spread cannot be negative.")
+            opened_at = position.opened_at
+            if data.get("openedAt"):
+                parsed = timezone.datetime.fromisoformat(str(data["openedAt"]).replace("Z", "+00:00"))
+                opened_at = timezone.make_aware(parsed) if timezone.is_naive(parsed) else parsed
+            closed_at = position.closed_at
+            if data.get("closedAt"):
+                parsed = timezone.datetime.fromisoformat(str(data["closedAt"]).replace("Z", "+00:00"))
+                closed_at = timezone.make_aware(parsed) if timezone.is_naive(parsed) else parsed
+        except (ValueError, TypeError, OverflowError) as exc:
+            return Response({"error": str(exc) or "Invalid trade values."}, status=400)
+
+        half_spread = (_pip_size(symbol) * spread) / Decimal("2")
+        entry_price = entry_mid + half_spread if side == "BUY" else entry_mid - half_spread
+        if entry_price <= 0:
+            return Response({"error": "Calculated entry price must be positive."}, status=400)
+        margin = (lots * STANDARD_LOT_UNITS * entry_mid / Decimal(leverage)).quantize(CENT, rounding=ROUND_HALF_UP)
+
+        wallet = _wallet(account)
+        old_pnl = position.realized_pnl if position.status == "CLOSED" else Decimal("0.00")
+        new_pnl = old_pnl
+        close_price = position.close_price
+        if position.status == "CLOSED":
+            close_mid_value = data.get("closeMidPrice", data.get("closeMid", None))
+            if close_mid_value is not None:
+                try:
+                    close_mid = _decimal(close_mid_value, "closeMidPrice")
+                except ValueError as exc:
+                    return Response({"error": str(exc)}, status=400)
+                if close_mid <= 0:
+                    return Response({"error": "closeMidPrice must be positive."}, status=400)
+                half_exit_spread = (_pip_size(symbol) * spread) / Decimal("2")
+                close_price = close_mid - half_exit_spread if side == "BUY" else close_mid + half_exit_spread
+            elif close_price is None:
+                return Response({"error": "A closed position must have a close price."}, status=400)
+            direction = Decimal("1") if side == "BUY" else Decimal("-1")
+            new_pnl = ((close_price - entry_price) * lots * STANDARD_LOT_UNITS * direction).quantize(CENT, rounding=ROUND_HALF_UP)
+            wallet.balance = (wallet.balance - old_pnl + new_pnl).quantize(CENT, rounding=ROUND_HALF_UP)
+            wallet.save(update_fields=["balance", "updated_at"])
+            position.close_price = close_price
+            position.realized_pnl = new_pnl
+            position.closed_at = closed_at
+
+        position.symbol = symbol
+        position.side = side
+        position.lots = lots
+        position.entry_mid_price = entry_mid
+        position.entry_price = entry_price
+        position.margin_used = margin
+        position.leverage_at_open = leverage
+        position.spread_pips_at_open = spread
+        position.opened_at = opened_at
+        position.save()
+
+        after = {
+            "symbol": position.symbol, "side": position.side, "lots": str(position.lots),
+            "entryPrice": str(position.entry_price), "entryMidPrice": str(position.entry_mid_price),
+            "marginUsed": str(position.margin_used), "leverageAtOpen": position.leverage_at_open,
+            "openedAt": position.opened_at.isoformat(), "status": position.status,
+            "closePrice": str(position.close_price) if position.close_price is not None else None,
+            "realizedPnl": str(position.realized_pnl),
+            "closedAt": position.closed_at.isoformat() if position.closed_at else None,
+        }
+        ForexTrade.objects.create(
+            account=account, position=position, actor=actor, event_type="CORRECTION",
+            symbol=symbol, side=side, lots=lots,
+            price=position.close_price if position.status == "CLOSED" and position.close_price is not None else entry_price,
+            pnl=(new_pnl - old_pnl).quantize(CENT, rounding=ROUND_HALF_UP),
+            margin_used=margin, reason=reason,
+            details={"before": before, "after": after, "walletAdjustment": str((new_pnl - old_pnl).quantize(CENT, rounding=ROUND_HALF_UP)), "simulatedOnly": True},
+        )
+        TrainingAuditEvent.objects.create(
+            actor=actor, account=account, action="FOREX_DEMO_POSITION_CORRECTED", reason=reason,
+            details={"position_id": position.id, "before": before, "after": after, "wallet_balance": str(wallet.balance), "simulated_only": True},
+        )
+        return Response({"message": "Demo position corrected; original event history retained.", "positionId": position.id, "before": before, "after": after, "realizedPnl": str(position.realized_pnl), "walletBalance": str(wallet.balance), "simulatedOnly": True})
