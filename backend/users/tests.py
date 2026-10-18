@@ -206,6 +206,46 @@ class ForexApiIntegrationTests(TestCase):
         self.assertEqual(response.data["leverage"], 50)
         self.assertEqual(response.data["marginUsed"], "217.00")
 
+    def test_snapshot_aggregates_margin_for_multiple_open_positions(self):
+        self.authenticate(self.manager)
+        first = self.client.post(self.open_url, {
+            "symbol": "EURUSD", "side": "BUY", "lots": "0.10",
+            "midPrice": "1.08500", "reason": "First aggregate margin position",
+        }, format="json")
+        self.assertEqual(first.status_code, 201, first.data)
+
+        second = self.client.post(self.open_url, {
+            "symbol": "GBPUSD", "side": "SELL", "lots": "0.10",
+            "midPrice": "1.27000",
+            "quotes": {"EURUSD": "1.08500"},
+            "reason": "Second aggregate margin position",
+        }, format="json")
+        self.assertEqual(second.status_code, 201, second.data)
+
+        response = self.client.post(self.snapshot_url, {
+            "quotes": {"EURUSD": "1.08500", "GBPUSD": "1.27000"},
+        }, format="json")
+        self.assertEqual(response.status_code, 200, response.data)
+        self.assertEqual(response.data["usedMargin"], "2355.00")
+        self.assertEqual(len(response.data["positions"]), 2)
+        self.assertEqual(response.data["freeMargin"], "97645.00")
+
+    def test_open_position_requires_quotes_for_existing_positions(self):
+        self.authenticate(self.manager)
+        first = self.client.post(self.open_url, {
+            "symbol": "EURUSD", "side": "BUY", "lots": "0.10",
+            "midPrice": "1.08500", "reason": "Create existing position",
+        }, format="json")
+        self.assertEqual(first.status_code, 201, first.data)
+
+        second = self.client.post(self.open_url, {
+            "symbol": "GBPUSD", "side": "SELL", "lots": "0.10",
+            "midPrice": "1.27000", "reason": "Missing quote must reject",
+        }, format="json")
+        self.assertEqual(second.status_code, 400)
+        self.assertIn("quotes for all existing", second.data["error"])
+        self.assertEqual(ForexPosition.objects.filter(status="OPEN").count(), 1)
+
     def test_insufficient_margin_rejects_position(self):
         self.trainee_user.initial_balance = Decimal("1.00")
         self.trainee_user.buying_power = Decimal("1.00")
