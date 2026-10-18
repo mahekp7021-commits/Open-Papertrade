@@ -895,3 +895,30 @@ class ForexTrade(models.Model):
         db_table = 'forex_trades'
         ordering = ['-created_at']
 
+
+
+class TeachingBoardTrade(models.Model):
+    """Editable illustrative trade card for coaching; never affects the demo wallet."""
+    SIDE_CHOICES = [('BUY', 'Buy'), ('SELL', 'Sell')]
+    STATUS_CHOICES = [('OPEN', 'Open'), ('CLOSED', 'Closed'), ('EXAMPLE', 'Teaching example')]
+    account = models.ForeignKey(TrainingAccount, on_delete=models.CASCADE, related_name='teaching_board_trades')
+    created_by = models.ForeignKey(UserProfile, on_delete=models.SET_NULL, null=True, related_name='teaching_board_trades_created')
+    symbol = models.CharField(max_length=12, help_text='Teaching symbol, e.g. USDJPY, BTCUSD or USDBTC.')
+    side = models.CharField(max_length=4, choices=SIDE_CHOICES, default='BUY')
+    entry_price = models.DecimalField(max_digits=20, decimal_places=8, default=Decimal('1.00000000'))
+    margin_amount = models.DecimalField(max_digits=20, decimal_places=2, default=Decimal('0.00'))
+    leverage = models.PositiveIntegerField(default=100)
+    lots = models.DecimalField(max_digits=12, decimal_places=4, default=Decimal('0.0100'))
+    status = models.CharField(max_length=12, choices=STATUS_CHOICES, default='EXAMPLE')
+    trade_time = models.DateTimeField(default=timezone.now, help_text='Trainer-editable example date and time.')
+    lesson_title = models.CharField(max_length=160, blank=True, default='')
+    explanation = models.TextField(blank=True, default='')
+    created_at = models.DateTimeField(default=timezone.now)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = 'teaching_board_trades'
+        ordering = ['-trade_time', '-id']
+
+    def __str__(self):
+        return f"{self.symbol} {self.side} — {self.account}"
