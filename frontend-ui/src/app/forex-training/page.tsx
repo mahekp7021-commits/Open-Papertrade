@@ -244,12 +244,19 @@ export default function ForexTrainingPage() {
       const closeValue = window.prompt("Corrected close mid-price (required if changing symbol, side, lots, entry price or spread)", "");
       if (closeValue === null) return;
       if (closeValue.trim()) closeMidPrice = closeValue.trim();
+      // Compare numeric fields numerically so equivalent formatting (1.0 vs 1.000)
+      // does not unnecessarily demand a new close quote.
+      const sameNumber = (left: string, right: string) => {
+        const a = Number(left);
+        const b = Number(right);
+        return Number.isFinite(a) && Number.isFinite(b) && a === b;
+      };
       const pnlInputsChanged =
         symbolValue.trim().toUpperCase() !== position.symbol ||
         sideValue.trim().toUpperCase() !== position.side ||
-        lotsValue.trim() !== position.lots ||
-        entryMidValue.trim() !== (position.entryMidPrice || position.entryPrice) ||
-        spreadValue.trim() !== (position.spreadPips || "1");
+        !sameNumber(lotsValue, position.lots) ||
+        !sameNumber(entryMidValue, position.entryMidPrice || position.entryPrice) ||
+        !sameNumber(spreadValue, position.spreadPips || "1");
       if (pnlInputsChanged && !closeMidPrice) {
         throw new Error("Closed-trade P/L inputs changed. Enter the corrected close mid-price so the virtual wallet can be recalculated accurately.");
       }
