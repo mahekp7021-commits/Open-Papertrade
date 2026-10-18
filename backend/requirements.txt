@@ -40,3 +40,4 @@ sentence-transformers==3.3.1
 rank-bm25==0.2.2
 anthropic==0.44.0
 openai==1.59.9
+gunicorn==23.0.0
