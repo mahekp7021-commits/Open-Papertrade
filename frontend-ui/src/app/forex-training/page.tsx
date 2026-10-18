@@ -241,9 +241,18 @@ export default function ForexTrainingPage() {
     let closeMidPrice: string | undefined;
     let closedAt: string | undefined;
     if (position.status === "CLOSED") {
-      const closeValue = window.prompt("Corrected close mid-price (leave blank to keep existing close price)", "");
+      const closeValue = window.prompt("Corrected close mid-price (required if changing symbol, side, lots, entry price or spread)", "");
       if (closeValue === null) return;
       if (closeValue.trim()) closeMidPrice = closeValue.trim();
+      const pnlInputsChanged =
+        symbolValue.trim().toUpperCase() !== position.symbol ||
+        sideValue.trim().toUpperCase() !== position.side ||
+        lotsValue.trim() !== position.lots ||
+        entryMidValue.trim() !== (position.entryMidPrice || position.entryPrice) ||
+        spreadValue.trim() !== (position.spreadPips || "1");
+      if (pnlInputsChanged && !closeMidPrice) {
+        throw new Error("Closed-trade P/L inputs changed. Enter the corrected close mid-price so the virtual wallet can be recalculated accurately.");
+      }
       const closeTimeValue = window.prompt("Closed at (ISO date/time)", position.closedAt || "");
       if (closeTimeValue === null) return;
       if (closeTimeValue.trim()) closedAt = closeTimeValue.trim();
