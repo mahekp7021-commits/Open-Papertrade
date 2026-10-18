@@ -388,6 +388,35 @@ class TrainerCorrectionApiTests(TestCase):
         self.account_url = f"/api/users/training/accounts/{self.account.id}/"
         self.open_url = f"/api/users/training/accounts/{self.account.id}/forex/open/"
 
+    def test_changing_account_leverage_preserves_existing_position_history(self):
+        first = self.client.post(self.open_url, {
+            "symbol": "EURUSD", "side": "BUY", "lots": "0.10",
+            "midPrice": "1.08500", "reason": "Open position at original leverage",
+        }, format="json")
+        self.assertEqual(first.status_code, 201, first.data)
+        first_position = ForexPosition.objects.get(pk=first.data["positionId"])
+        self.assertEqual(first_position.leverage_at_open, 100)
+        self.assertEqual(first_position.margin_used, Decimal("108.50"))
+
+        changed = self.client.patch(self.account_url, {
+            "leverage": 200, "reason": "Change current account leverage for training",
+        }, format="json")
+        self.assertEqual(changed.status_code, 200, changed.data)
+
+        first_position.refresh_from_db()
+        self.assertEqual(first_position.leverage_at_open, 100)
+        self.assertEqual(first_position.margin_used, Decimal("108.50"))
+
+        second = self.client.post(self.open_url, {
+            "symbol": "GBPUSD", "side": "SELL", "lots": "0.10",
+            "midPrice": "1.27000", "quotes": {"EURUSD": "1.08500"},
+            "reason": "Open new position at updated leverage",
+        }, format="json")
+        self.assertEqual(second.status_code, 201, second.data)
+        second_position = ForexPosition.objects.get(pk=second.data["positionId"])
+        self.assertEqual(second_position.leverage_at_open, 200)
+        self.assertEqual(second_position.margin_used, Decimal("63.50"))
+
     def test_manager_can_edit_profile_balance_and_leverage(self):
         response = self.client.patch(self.account_url, {
             "name": "Corrected Trainee", "username": "corrected-trainee",
