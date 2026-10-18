@@ -503,6 +503,36 @@ class TrainerCorrectionApiTests(TestCase):
             "2026-10-17T12:00:00+00:00",
         )
 
+    def test_correction_event_stores_before_after_and_wallet_delta(self):
+        opened = self.client.post(self.open_url, {
+            "symbol": "EURUSD", "side": "BUY", "lots": "0.10",
+            "midPrice": "1.08500", "reason": "Open before audit detail test",
+        }, format="json")
+        self.assertEqual(opened.status_code, 201, opened.data)
+        position_id = opened.data["positionId"]
+        closed = self.client.post(
+            f"/api/users/training/accounts/{self.account.id}/forex/positions/{position_id}/close/",
+            {"midPrice": "1.08600", "reason": "Close before audit detail test"}, format="json",
+        )
+        self.assertEqual(closed.status_code, 200, closed.data)
+        correction = self.client.patch(
+            f"/api/users/training/accounts/{self.account.id}/forex/positions/{position_id}/edit/",
+            {"entryMidPrice": "1.08400", "closeMidPrice": "1.08600",
+             "reason": "Verify immutable correction audit details"}, format="json",
+        )
+        self.assertEqual(correction.status_code, 200, correction.data)
+
+        event = ForexTrade.objects.get(position_id=position_id, event_type="CORRECTION")
+        self.assertEqual(event.details["before"]["entryMidPrice"], "1.08500")
+        self.assertEqual(event.details["after"]["entryMidPrice"], "1.08400")
+        self.assertEqual(event.details["walletAdjustment"], "10.00")
+        self.assertTrue(event.details["simulatedOnly"])
+        audit = TrainingAuditEvent.objects.get(account=self.account, action="FOREX_DEMO_POSITION_CORRECTED")
+        self.assertEqual(audit.details["before"]["entryMidPrice"], "1.08500")
+        self.assertEqual(audit.details["after"]["entryMidPrice"], "1.08400")
+        self.assertEqual(audit.details["wallet_balance"], "100019.00")
+        self.assertTrue(audit.details["simulated_only"])
+
     def test_closed_trade_correction_reconciles_wallet_and_preserves_original_events(self):
         opened = self.client.post(self.open_url, {
             "symbol": "EURUSD", "side": "BUY", "lots": "0.10",
