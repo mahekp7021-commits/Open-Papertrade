@@ -410,6 +410,41 @@ class TrainerCorrectionApiTests(TestCase):
         self.trainee.refresh_from_db()
         self.assertEqual(self.trainee.name, "Correction Trainee")
 
+    def test_repeated_closed_trade_corrections_reconcile_wallet_incrementally(self):
+        self.authenticate(self.manager)
+        opened = self.client.post(self.open_url, {
+            "symbol": "EURUSD", "side": "BUY", "lots": "0.10",
+            "midPrice": "1.08500", "reason": "Open before repeated correction test",
+        }, format="json")
+        self.assertEqual(opened.status_code, 201, opened.data)
+        position_id = opened.data["positionId"]
+        close_url = f"/api/users/training/accounts/{self.account.id}/forex/positions/{position_id}/close/"
+        closed = self.client.post(close_url, {
+            "midPrice": "1.08600", "reason": "Close before repeated correction test",
+        }, format="json")
+        self.assertEqual(closed.status_code, 200, closed.data)
+
+        edit_url = f"/api/users/training/accounts/{self.account.id}/forex/positions/{position_id}/edit/"
+        first = self.client.patch(edit_url, {
+            "entryMidPrice": "1.08400", "closeMidPrice": "1.08600",
+            "reason": "First training correction",
+        }, format="json")
+        self.assertEqual(first.status_code, 200, first.data)
+        self.assertEqual(ForexDemoWallet.objects.get(account=self.account).balance, Decimal("100019.00"))
+
+        second = self.client.patch(edit_url, {
+            "entryMidPrice": "1.08300", "closeMidPrice": "1.08600",
+            "reason": "Second training correction",
+        }, format="json")
+        self.assertEqual(second.status_code, 200, second.data)
+        position = ForexPosition.objects.get(pk=position_id)
+        wallet = ForexDemoWallet.objects.get(account=self.account)
+        self.assertEqual(position.realized_pnl, Decimal("29.00"))
+        self.assertEqual(wallet.balance, Decimal("100029.00"))
+        self.assertEqual(ForexTrade.objects.filter(position_id=position_id, event_type="CORRECTION").count(), 2)
+        self.assertEqual(ForexTrade.objects.filter(position_id=position_id, event_type="OPEN").count(), 1)
+        self.assertEqual(ForexTrade.objects.filter(position_id=position_id, event_type="CLOSE").count(), 1)
+
     def test_closed_trade_correction_reconciles_wallet_and_preserves_original_events(self):
         opened = self.client.post(self.open_url, {
             "symbol": "EURUSD", "side": "BUY", "lots": "0.10",
