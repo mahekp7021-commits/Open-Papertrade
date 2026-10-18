@@ -403,6 +403,8 @@ class TrainerCorrectionApiTests(TestCase):
         wallet = ForexDemoWallet.objects.get(account=self.account)
         self.assertEqual(position.realized_pnl, Decimal("19.00"))
         self.assertEqual(wallet.balance, original_wallet + Decimal("10.00"))
+        from .training_views import _account_payload
+        self.assertEqual(_account_payload(self.account)["demoBalance"], str(wallet.balance))
         self.assertEqual(ForexTrade.objects.filter(position_id=position_id).count(), original_event_count + 1)
         self.assertTrue(ForexTrade.objects.filter(position_id=position_id, event_type="CORRECTION").exists())
         self.assertTrue(TrainingAuditEvent.objects.filter(account=self.account, action="FOREX_DEMO_POSITION_CORRECTED").exists())
