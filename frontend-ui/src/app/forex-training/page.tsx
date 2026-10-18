@@ -184,6 +184,44 @@ export default function ForexTrainingPage() {
     setMessage({ kind: "ok", text: "Teaching card removed. Actual Forex history and wallet were untouched." });
   });
 
+  const editForexPosition = (position: Position) => runAction(async () => {
+    const symbolValue = window.prompt("Symbol (USD-quoted FX pair, e.g. EURUSD)", position.symbol);
+    if (symbolValue === null) return;
+    const sideValue = window.prompt("Side: BUY or SELL", position.side);
+    if (sideValue === null) return;
+    const lotsValue = window.prompt("Lots", position.lots);
+    if (lotsValue === null) return;
+    const entryMidValue = window.prompt("Entry mid-price (before spread)", position.entryPrice);
+    if (entryMidValue === null) return;
+    const leverageValue = window.prompt("Leverage at open (number only, e.g. 400)", String(position.leverage));
+    if (leverageValue === null) return;
+    const openedValue = window.prompt("Opened at (ISO date/time)", position.openedAt);
+    if (openedValue === null) return;
+    let closeMidPrice: string | undefined;
+    let closedAt: string | undefined;
+    if (position.status === "CLOSED") {
+      const closeValue = window.prompt("Corrected close mid-price (leave blank to keep existing close price)", "");
+      if (closeValue === null) return;
+      if (closeValue.trim()) closeMidPrice = closeValue.trim();
+      const closeTimeValue = window.prompt("Closed at (ISO date/time)", position.closedAt || "");
+      if (closeTimeValue === null) return;
+      if (closeTimeValue.trim()) closedAt = closeTimeValue.trim();
+    }
+    const correctionReason = window.prompt("Reason for correction (required for audit)", "Trainer correction for lesson accuracy");
+    if (!correctionReason?.trim()) throw new Error("A correction reason is required.");
+    const payload: Record<string, string> = {
+      symbol: symbolValue.trim().toUpperCase(), side: sideValue.trim().toUpperCase(),
+      lots: lotsValue.trim(), entryMidPrice: entryMidValue.trim(),
+      leverageAtOpen: leverageValue.trim(), openedAt: openedValue.trim(), reason: correctionReason.trim()
+    };
+    if (closeMidPrice) payload.closeMidPrice = closeMidPrice;
+    if (closedAt) payload.closedAt = closedAt;
+    const result = await api(`/users/training/accounts/${accountId}/forex/positions/${position.id}/edit/`, "PATCH", payload);
+    await loadHistory(accountId);
+    setSnapshot(null);
+    setMessage({ kind: "ok", text: `Trade corrected. Recalculated P/L: ${money(result.realizedPnl)} · Virtual wallet: ${money(result.walletBalance)}. Previous events remain in history.` });
+  });
+
   const closePosition = (position: Position) => runAction(async () => {
     const quotes = parseQuotes();
     const price = quotes[position.symbol] || (position.symbol === symbol ? midPrice : "");
@@ -253,7 +291,13 @@ export default function ForexTrainingPage() {
                 <section className={panel}>
                   <div className="mb-4 flex items-center justify-between"><h2 className="font-semibold">Open positions</h2><span className="rounded-full bg-[var(--bg-muted)] px-2.5 py-1 text-xs">{positions.filter((p) => p.status === "OPEN").length} open</span></div>
                   <div className="space-y-3">
-                    {positions.filter((p) => p.status === "OPEN").length === 0 ? <p className="rounded-xl bg-[var(--bg-card-inner)] p-4 text-sm text-[var(--text-secondary)]">No open Forex demo positions yet.</p> : positions.filter((p) => p.status === "OPEN").map((p) => <div key={p.id} className="rounded-xl border border-[var(--border-muted)] p-3"><div className="flex items-start justify-between gap-3"><div><div className="font-semibold">{p.symbol} <span className={p.side === "BUY" ? "text-emerald-400" : "text-red-400"}>{p.side}</span></div><p className="mt-1 text-xs text-[var(--text-secondary)]">{p.lots} lots · Entry {p.entryPrice}</p><p className="mt-1 text-xs text-[var(--text-secondary)]">Margin {money(p.marginUsed)} · 1:{p.leverage}</p></div><button onClick={() => closePosition(p)} disabled={busy} className="rounded-lg border border-red-500/30 px-3 py-2 text-xs text-red-400 hover:bg-red-500/10 disabled:opacity-50">Close</button></div></div>)}
+                    {positions.filter((p) => p.status === "OPEN").length === 0 ? <p className="rounded-xl bg-[var(--bg-card-inner)] p-4 text-sm text-[var(--text-secondary)]">No open Forex demo positions yet.</p> : positions.filter((p) => p.status === "OPEN").map((p) => <div key={p.id} className="rounded-xl border border-[var(--border-muted)] p-3"><div className="flex items-start justify-between gap-3"><div><div className="font-semibold">{p.symbol} <span className={p.side === "BUY" ? "text-emerald-400" : "text-red-400"}>{p.side}</span></div><p className="mt-1 text-xs text-[var(--text-secondary)]">{p.lots} lots · Entry {p.entryPrice}</p><p className="mt-1 text-xs text-[var(--text-secondary)]">Margin {money(p.marginUsed)} · 1:{p.leverage}</p></div><div className="flex flex-wrap gap-2"><button onClick={() => editForexPosition(p)} disabled={busy} className="rounded-lg border border-[var(--border-muted)] px-3 py-2 text-xs disabled:opacity-50">Edit / correct</button><button onClick={() => closePosition(p)} disabled={busy} className="rounded-lg border border-red-500/30 px-3 py-2 text-xs text-red-400 hover:bg-red-500/10 disabled:opacity-50">Close</button></div></div></div>)}
+                  </div>
+                  <div className="mt-6 border-t border-[var(--border-muted)] pt-4">
+                    <h3 className="mb-3 text-sm font-semibold">Closed trade history & corrections</h3>
+                    <div className="space-y-2">
+                      {positions.filter((p) => p.status === "CLOSED").length === 0 ? <p className="text-xs text-[var(--text-secondary)]">No closed trades yet.</p> : positions.filter((p) => p.status === "CLOSED").map((p) => <div key={p.id} className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-[var(--border-muted)] p-3 text-xs"><div><p className="font-semibold">{p.symbol} · {p.side} · {p.lots} lots</p><p className="mt-1 text-[var(--text-secondary)]">Entry {p.entryPrice} · P/L {money(p.realizedPnl)} · Closed {p.closedAt ? new Date(p.closedAt).toLocaleString() : "—"}</p></div><button onClick={() => editForexPosition(p)} disabled={busy} className="rounded-lg border border-[var(--border-muted)] px-3 py-2 disabled:opacity-50">Edit / correct</button></div>)}
+                    </div>
                   </div>
                   <div className="mt-6 border-t border-[var(--border-muted)] pt-4"><h3 className="mb-3 text-sm font-semibold">Recent Forex events</h3><div className="space-y-2">{events.slice(0, 6).length === 0 ? <p className="text-xs text-[var(--text-secondary)]">No event history yet.</p> : events.slice(0, 6).map((event) => <div key={event.id} className="flex items-start justify-between gap-3 text-xs"><div><p className="font-medium">{event.eventType} · {event.symbol} · {event.side}</p><p className="mt-1 text-[var(--text-secondary)]">{event.reason}</p><p className="mt-1 text-[var(--text-muted)]">{event.actor || "Manager"} · {new Date(event.createdAt).toLocaleString()}</p></div><span className="shrink-0 tabular-nums">{money(event.pnl)}</span></div>)}</div></div>
                 </section>
