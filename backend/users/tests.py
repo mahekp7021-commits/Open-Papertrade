@@ -417,6 +417,32 @@ class TrainerCorrectionApiTests(TestCase):
         self.assertEqual(second_position.leverage_at_open, 200)
         self.assertEqual(second_position.margin_used, Decimal("63.50"))
 
+    def test_virtual_balance_adjustment_updates_snapshot_equity_and_free_margin(self):
+        opened = self.client.post(self.open_url, {
+            "symbol": "EURUSD", "side": "BUY", "lots": "0.10",
+            "midPrice": "1.08500", "reason": "Open before virtual balance adjustment",
+        }, format="json")
+        self.assertEqual(opened.status_code, 201, opened.data)
+
+        adjusted = self.client.patch(self.account_url, {
+            "demoBalance": "50000.00",
+            "reason": "Set classroom starting balance",
+        }, format="json")
+        self.assertEqual(adjusted.status_code, 200, adjusted.data)
+        wallet = ForexDemoWallet.objects.get(account=self.account)
+        self.assertEqual(wallet.balance, Decimal("50000.00"))
+
+        snapshot = self.client.post(
+            f"/api/users/training/accounts/{self.account.id}/forex/snapshot/",
+            {"quotes": {"EURUSD": "1.08510"}}, format="json",
+        )
+        self.assertEqual(snapshot.status_code, 200, snapshot.data)
+        self.assertEqual(snapshot.data["balance"], "50000.00")
+        self.assertEqual(snapshot.data["usedMargin"], "108.50")
+        self.assertEqual(Decimal(snapshot.data["unrealizedPnl"]), Decimal("0.00"))
+        self.assertEqual(snapshot.data["equity"], "50000.00")
+        self.assertEqual(snapshot.data["freeMargin"], "49891.50")
+
     def test_manager_can_edit_profile_balance_and_leverage(self):
         response = self.client.patch(self.account_url, {
             "name": "Corrected Trainee", "username": "corrected-trainee",
