@@ -12,6 +12,7 @@ from . import coaching_views
 from . import copy_trading_views
 from . import training_views
 from . import forex_views
+from . import teaching_board_views
 
 app_name = 'users'
 
@@ -27,6 +28,9 @@ urlpatterns = [
     path('training/accounts/<int:account_id>/forex/positions/', forex_views.ForexPositionListView.as_view(), name='training-forex-positions'),
     path('training/accounts/<int:account_id>/forex/open/', forex_views.ForexOpenPositionView.as_view(), name='training-forex-open'),
     path('training/accounts/<int:account_id>/forex/positions/<int:position_id>/close/', forex_views.ForexClosePositionView.as_view(), name='training-forex-close'),
+    # Editable teaching-board examples; separate from actual demo wallet/history
+    path('training/accounts/<int:account_id>/teaching-board/', teaching_board_views.TeachingBoardListCreateView.as_view(), name='teaching-board-list-create'),
+    path('training/accounts/<int:account_id>/teaching-board/<int:card_id>/', teaching_board_views.TeachingBoardDetailView.as_view(), name='teaching-board-detail'),
     # Profile
     path('profile/', views.UserProfileView.as_view(), name='profile'),
     path('profile/avatar/', views.AvatarUploadView.as_view(), name='avatar-upload'),
