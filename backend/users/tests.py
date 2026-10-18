@@ -138,6 +138,51 @@ class ForexApiIntegrationTests(TestCase):
             Decimal(snapshot.data["equity"]) - Decimal("362.50"),
         )
 
+    def test_stop_out_closes_multiple_positions_and_reconciles_wallet(self):
+        self.authenticate(self.manager)
+        first = self.client.post(self.open_url, {
+            "symbol": "EURUSD", "side": "BUY", "lots": "0.10",
+            "midPrice": "1.08500", "reason": "First position for multi-stop-out test",
+        }, format="json")
+        self.assertEqual(first.status_code, 201, first.data)
+        second = self.client.post(self.open_url, {
+            "symbol": "GBPUSD", "side": "SELL", "lots": "0.20",
+            "midPrice": "1.27000", "quotes": {"EURUSD": "1.08500"},
+            "reason": "Second position for multi-stop-out test",
+        }, format="json")
+        self.assertEqual(second.status_code, 201, second.data)
+
+        wallet = ForexDemoWallet.objects.get(account=self.account)
+        wallet.balance = Decimal("40.00")
+        wallet.save(update_fields=["balance", "updated_at"])
+        response = self.client.post(self.snapshot_url, {
+            "quotes": {"EURUSD": "1.08500", "GBPUSD": "1.27000"},
+        }, format="json")
+        self.assertEqual(response.status_code, 200, response.data)
+
+        positions = ForexPosition.objects.filter(
+            pk__in=[first.data["positionId"], second.data["positionId"]],
+        )
+        self.assertEqual(positions.filter(status="OPEN").count(), 0)
+        self.assertEqual(positions.filter(status="CLOSED").count(), 2)
+        stop_outs = ForexTrade.objects.filter(
+            account=self.account, event_type="STOP_OUT",
+        )
+        self.assertEqual(stop_outs.count(), 2)
+        self.assertEqual(
+            sum((event.pnl for event in stop_outs), Decimal("0.00")),
+            Decimal("-3.00"),
+        )
+        wallet.refresh_from_db()
+        self.assertEqual(wallet.balance, Decimal("37.00"))
+        self.assertEqual(response.data["balance"], "37.00")
+        self.assertEqual(
+            TrainingAuditEvent.objects.filter(
+                account=self.account, action="FOREX_DEMO_STOP_OUT",
+            ).count(),
+            2,
+        )
+
     def test_open_position_keeps_original_spread_after_account_config_changes(self):
         self.authenticate(self.manager)
         opened = self.client.post(self.open_url, {
