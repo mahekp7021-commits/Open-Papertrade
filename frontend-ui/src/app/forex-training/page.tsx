@@ -303,6 +303,14 @@ export default function ForexTrainingPage() {
             <button onClick={() => runAction(async () => { await loadAccounts(); if (accountId) await loadHistory(accountId); })} disabled={busy} className="inline-flex items-center justify-center gap-2 rounded-xl border border-[var(--border-muted)] px-4 py-2.5 text-sm hover:bg-[var(--bg-hover)] disabled:opacity-50"><RefreshCw size={15} /> Refresh</button>
           </div>
 
+          <div role="note" className="mb-5 flex items-start gap-3 rounded-xl border border-emerald-500/30 bg-emerald-500/10 px-4 py-3">
+            <ShieldCheck size={18} className="mt-0.5 shrink-0 text-emerald-400" />
+            <div>
+              <p className="text-sm font-semibold text-emerald-300">DEMO TRADING — VIRTUAL FUNDS ONLY</p>
+              <p className="mt-1 text-xs leading-5 text-[var(--text-secondary)]">For education and classroom practice only. Orders, balances, margin, profit and loss are simulated. No real deposits, withdrawals, bank deductions, broker accounts or live orders.</p>
+            </div>
+          </div>
+
           {message && <div role="status" className={`mb-5 rounded-xl border px-4 py-3 text-sm ${message.kind === "error" ? "border-red-500/30 bg-red-500/10 text-red-300" : "border-emerald-500/30 bg-emerald-500/10 text-emerald-300"}`}>{message.text}</div>}
 
           {loading ? <div className={panel}>Loading training accounts…</div> : accounts.length === 0 ? (
