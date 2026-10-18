@@ -5,7 +5,7 @@ import { Activity, AlertTriangle, ArrowDownRight, ArrowUpRight, RefreshCw, Shiel
 import Sidebar from "@/components/Sidebar";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || "/api";
-type Account = { id: number; name: string; username: string; role: string; enabled: boolean; demoBalance: string; leverage: number; spreadPips: string; marginCallLevelPercent: string; stopOutLevelPercent: string; maxPositionSize: string };
+type Account = { id: number; name: string; username: string; email: string; role: string; enabled: boolean; demoBalance: string; leverage: number; spreadPips: string; marginCallLevelPercent: string; stopOutLevelPercent: string; maxPositionSize: string };
 type Position = { id: number; symbol: string; side: string; lots: string; entryPrice: string; entryMidPrice: string; spreadPips: string; marginUsed: string; leverage: number; status: string; realizedPnl: string; openReason: string; closeReason: string; openedAt: string; closedAt: string | null };
 type Snapshot = { balance: string; unrealizedPnl: string; equity: string; usedMargin: string; freeMargin: string; marginLevelPercent: string | null; riskStatus: string; positions: Array<{ id: number; symbol: string; side: string; lots: string; entryPrice: string; midPrice: string | null; estimatedExitPrice: string | null; unrealizedPnl: string | null; marginUsed: string; leverageAtOpen: number; openedAt: string }> };
 type BoardCard = { id: number; accountId: number; symbol: string; side: "BUY" | "SELL"; entryPrice: string; marginAmount: string; leverage: number; lots: string; status: string; tradeTime: string; lessonTitle: string; explanation: string; createdAt: string; updatedAt: string };
@@ -99,6 +99,45 @@ export default function ForexTrainingPage() {
     catch (error) { setMessage({ kind: "error", text: error instanceof Error ? error.message : "Something went wrong." }); }
     finally { setBusy(false); }
   };
+
+  const editTrainingAccount = () => runAction(async () => {
+    if (!selected) throw new Error("Select a training account first.");
+    const name = window.prompt("Trainee full name", selected.name);
+    if (name === null) return;
+    const username = window.prompt("Username", selected.username);
+    if (username === null) return;
+    const email = window.prompt("Email address", selected.email || "");
+    if (email === null) return;
+    const balance = window.prompt("Virtual wallet balance (USD)", selected.demoBalance);
+    if (balance === null) return;
+    const leverage = window.prompt("Leverage (number only; 400 means 1:400)", String(selected.leverage));
+    if (leverage === null) return;
+    const spread = window.prompt("Spread in pips", selected.spreadPips);
+    if (spread === null) return;
+    const maxLots = window.prompt("Maximum position size in lots", selected.maxPositionSize);
+    if (maxLots === null) return;
+    const marginCall = window.prompt("Margin-call level (%)", selected.marginCallLevelPercent);
+    if (marginCall === null) return;
+    const stopOut = window.prompt("Stop-out level (%)", selected.stopOutLevelPercent);
+    if (stopOut === null) return;
+    const enabled = window.confirm("Press OK to ENABLE this training account. Press Cancel to DISABLE it.");
+    const password = window.prompt("Optional password reset (leave blank to keep current password; minimum 12 characters)", "");
+    if (password === null) return;
+    const correctionReason = window.prompt("Reason for account changes (audit log)", "Trainer corrected trainee account settings");
+    if (!correctionReason?.trim()) throw new Error("A reason is required for the audit log.");
+    const payload: Record<string, unknown> = {
+      name: name.trim(), username: username.trim(), email: email.trim(),
+      demoBalance: balance.trim(), leverage: leverage.trim(), spreadPips: spread.trim(),
+      maxPositionSize: maxLots.trim(), marginCallLevelPercent: marginCall.trim(),
+      stopOutLevelPercent: stopOut.trim(), enabled, reason: correctionReason.trim()
+    };
+    if (password.trim()) payload.password = password.trim();
+    await api(`/users/training/accounts/${accountId}/`, "PATCH", payload);
+    await loadAccounts();
+    await loadHistory(accountId);
+    setSnapshot(null);
+    setMessage({ kind: "ok", text: "Trainee profile and virtual trading settings updated. Changes are audit-logged; no real funds or broker account are involved." });
+  });
 
   const parseQuotes = () => {
     const value = JSON.parse(quotesText);
@@ -255,7 +294,7 @@ export default function ForexTrainingPage() {
               <section className={`${panel} mb-5`}>
                 <div className="grid gap-4 md:grid-cols-3">
                   <div><label className={label}>Training account</label><select className={field} value={accountId} onChange={(e) => setAccountId(e.target.value)}>{accounts.map((a) => <option key={a.id} value={a.id}>{a.name} (@{a.username}) — {a.role}</option>)}</select></div>
-                  <div><label className={label}>Account settings</label><div className="rounded-xl bg-[var(--bg-card-inner)] px-3 py-2.5 text-sm">1:{selected?.leverage ?? "—"} leverage · {selected?.spreadPips ?? "—"} pip spread</div></div>
+                  <div><label className={label}>Account settings</label><div className="flex items-center gap-2"><div className="min-w-0 flex-1 rounded-xl bg-[var(--bg-card-inner)] px-3 py-2.5 text-sm">1:{selected?.leverage ?? "—"} leverage · {selected?.spreadPips ?? "—"} pip spread</div><button onClick={editTrainingAccount} disabled={busy || !selected} className="rounded-xl bg-[var(--accent-primary)] px-3 py-2.5 text-xs font-semibold text-white disabled:opacity-50">Edit account</button></div></div>
                   <div><label className={label}>Account status</label><div className="flex items-center gap-2 rounded-xl bg-[var(--bg-card-inner)] px-3 py-2.5 text-sm"><span className={`h-2 w-2 rounded-full ${selected?.enabled ? "bg-emerald-500" : "bg-red-500"}`} />{selected?.enabled ? "Enabled" : "Disabled"}<span className="ml-auto text-[var(--text-secondary)]">{selected?.maxPositionSize ?? "—"} max lots</span></div></div>
                 </div>
               </section>
