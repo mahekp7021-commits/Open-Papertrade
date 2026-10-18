@@ -268,7 +268,7 @@ class ForexPositionListView(APIView):
             "walletBalance": str(wallet.balance),
             "positions": [{
                 "id": p.id, "symbol": p.symbol, "side": p.side, "lots": str(p.lots),
-                "entryPrice": str(p.entry_price), "marginUsed": str(p.margin_used),
+                "entryPrice": str(p.entry_price), "entryMidPrice": str(p.entry_mid_price), "spreadPips": str(p.spread_pips_at_open), "marginUsed": str(p.margin_used),
                 "leverage": p.leverage_at_open, "status": p.status,
                 "realizedPnl": str(p.realized_pnl), "openReason": p.open_reason,
                 "closeReason": p.close_reason, "openedAt": p.opened_at.isoformat(),
