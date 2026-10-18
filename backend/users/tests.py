@@ -443,6 +443,32 @@ class TrainerCorrectionApiTests(TestCase):
         self.assertEqual(snapshot.data["equity"], "50000.00")
         self.assertEqual(snapshot.data["freeMargin"], "49891.50")
 
+    def test_admin_balance_adjustment_triggers_simulated_stop_out_on_snapshot(self):
+        opened = self.client.post(self.open_url, {
+            "symbol": "EURUSD", "side": "BUY", "lots": "0.10",
+            "midPrice": "1.08500", "reason": "Open before balance-triggered stop-out",
+        }, format="json")
+        self.assertEqual(opened.status_code, 201, opened.data)
+        position_id = opened.data["positionId"]
+        adjusted = self.client.patch(self.account_url, {
+            "demoBalance": "40.00",
+            "reason": "Demonstrate low virtual equity in training",
+        }, format="json")
+        self.assertEqual(adjusted.status_code, 200, adjusted.data)
+        self.assertEqual(ForexDemoWallet.objects.get(account=self.account).balance, Decimal("40.00"))
+        snapshot = self.client.post(
+            f"/api/users/training/accounts/{self.account.id}/forex/snapshot/",
+            {"quotes": {"EURUSD": "1.08500"}}, format="json",
+        )
+        self.assertEqual(snapshot.status_code, 200, snapshot.data)
+        position = ForexPosition.objects.get(pk=position_id)
+        self.assertEqual(position.status, "CLOSED")
+        self.assertEqual(snapshot.data["riskStatus"], "STOP_OUT_THRESHOLD_REACHED")
+        self.assertTrue(ForexTrade.objects.filter(position=position, event_type="STOP_OUT").exists())
+        self.assertTrue(TrainingAuditEvent.objects.filter(
+            account=self.account, action="FOREX_DEMO_STOP_OUT",
+        ).exists())
+
     def test_manager_can_edit_profile_balance_and_leverage(self):
         response = self.client.patch(self.account_url, {
             "name": "Corrected Trainee", "username": "corrected-trainee",
