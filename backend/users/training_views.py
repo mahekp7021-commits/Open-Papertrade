@@ -139,6 +139,27 @@ class TrainingAccountDetailView(APIView):
         actor = _manager(request)
         account = get_object_or_404(TrainingAccount.objects.select_related("user"), pk=account_id)
         data = request.data
+        user = account.user
+        profile_before = {"name": user.name, "username": user.username, "email": user.email}
+        profile_changes = {}
+        for incoming, field in (("name", "name"), ("username", "username"), ("email", "email")):
+            if incoming not in data:
+                continue
+            value = str(data[incoming]).strip().lower() if incoming in ("username", "email") else str(data[incoming]).strip()
+            if not value:
+                return Response({"error": f"{incoming} cannot be empty."}, status=status.HTTP_400_BAD_REQUEST)
+            if field == "username" and (len(value) < 3 or len(value) > 30 or not all(c.islower() or c.isdigit() or c == "-" for c in value) or value.startswith("-") or value.endswith("-")):
+                return Response({"error": "Username must be 3-30 lowercase letters, numbers or hyphens, and cannot start/end with a hyphen."}, status=status.HTTP_400_BAD_REQUEST)
+            if UserProfile.objects.filter(**{field: value}).exclude(pk=user.pk).exists():
+                return Response({"error": f"{incoming.capitalize()} is already in use."}, status=status.HTTP_400_BAD_REQUEST)
+            if getattr(user, field) != value:
+                setattr(user, field, value)
+                profile_changes[field] = value
+        if profile_changes:
+            user.save()
+            TrainingAuditEvent.objects.create(actor=actor, account=account, action="TRAINEE_PROFILE_UPDATED",
+                reason=str(data.get("reason", "Manager corrected trainee registration details."))[:5000],
+                details={"before": profile_before, "changed": profile_changes})
         if "enabled" in data:
             account.is_enabled = bool(data["enabled"])
             account.save(update_fields=["is_enabled", "updated_at"])
