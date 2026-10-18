@@ -1,8 +1,13 @@
 from decimal import Decimal
 
-from django.test import SimpleTestCase
+from django.test import SimpleTestCase, TestCase
+from rest_framework.test import APIClient
 
 from .forex_views import _decimal, _pnl
+from .models import (
+    ForexDemoWallet, ForexPosition, ForexTrade, TrainingAccount,
+    TrainingAuditEvent, TrainerTradingConfig, UserProfile,
+)
 
 
 class ForexDecimalHelperTests(SimpleTestCase):
@@ -19,36 +24,98 @@ class ForexDecimalHelperTests(SimpleTestCase):
 class ForexPnlHelperTests(SimpleTestCase):
     def test_buy_profit_accounts_for_half_spread(self):
         position = type("Position", (), {
-            "symbol": "EURUSD",
-            "side": "BUY",
-            "entry_price": Decimal("1.10005"),
-            "lots": Decimal("1.0000"),
+            "symbol": "EURUSD", "side": "BUY",
+            "entry_price": Decimal("1.10005"), "lots": Decimal("1.0000"),
         })()
         pnl, exit_price = _pnl(position, Decimal("1.10100"), Decimal("1.000"))
-
         self.assertEqual(exit_price, Decimal("1.10095"))
         self.assertEqual(pnl, Decimal("90.00"))
 
     def test_sell_profit_accounts_for_half_spread(self):
         position = type("Position", (), {
-            "symbol": "EURUSD",
-            "side": "SELL",
-            "entry_price": Decimal("1.09995"),
-            "lots": Decimal("1.0000"),
+            "symbol": "EURUSD", "side": "SELL",
+            "entry_price": Decimal("1.09995"), "lots": Decimal("1.0000"),
         })()
         pnl, exit_price = _pnl(position, Decimal("1.09900"), Decimal("1.000"))
-
         self.assertEqual(exit_price, Decimal("1.09905"))
         self.assertEqual(pnl, Decimal("90.00"))
 
     def test_jpy_pair_uses_jpy_pip_size(self):
         position = type("Position", (), {
-            "symbol": "USDJPY",
-            "side": "BUY",
-            "entry_price": Decimal("150.005"),
-            "lots": Decimal("1.0000"),
+            "symbol": "USDJPY", "side": "BUY",
+            "entry_price": Decimal("150.005"), "lots": Decimal("1.0000"),
         })()
         pnl, exit_price = _pnl(position, Decimal("150.100"), Decimal("1.000"))
-
         self.assertEqual(exit_price, Decimal("150.095"))
         self.assertEqual(pnl, Decimal("9000.00"))
+
+
+class ForexApiIntegrationTests(TestCase):
+    def setUp(self):
+        self.client = APIClient()
+        self.manager = UserProfile.objects.create(
+            name="Demo Manager", username="demo-manager", email="manager@example.test",
+            is_admin=True, initial_balance=Decimal("100000.00"),
+            buying_power=Decimal("100000.00"),
+        )
+        self.trainee_user = UserProfile.objects.create(
+            name="Demo Trainee", username="demo-trainee", email="trainee@example.test",
+            is_admin=False, initial_balance=Decimal("100000.00"),
+            buying_power=Decimal("100000.00"),
+        )
+        self.account = TrainingAccount.objects.create(
+            user=self.trainee_user, created_by=self.manager, role="TRAINEE",
+        )
+        TrainerTradingConfig.objects.create(account=self.account, leverage=100, spread_pips=Decimal("1.000"))
+        self.open_url = f"/api/users/training/accounts/{self.account.id}/forex/open/"
+        self.positions_url = f"/api/users/training/accounts/{self.account.id}/forex/positions/"
+        self.snapshot_url = f"/api/users/training/accounts/{self.account.id}/forex/snapshot/"
+
+    def authenticate(self, user):
+        self.client.force_authenticate(user=user)
+
+    def test_non_manager_cannot_open_demo_position(self):
+        self.authenticate(self.trainee_user)
+        response = self.client.post(self.open_url, {
+            "symbol": "EURUSD", "side": "BUY", "lots": "0.01",
+            "midPrice": "1.08500", "reason": "Integration test",
+        }, format="json")
+        self.assertEqual(response.status_code, 403)
+        self.assertEqual(ForexPosition.objects.count(), 0)
+
+    def test_open_close_updates_wallet_and_audit_history(self):
+        self.authenticate(self.manager)
+        opened = self.client.post(self.open_url, {
+            "symbol": "EURUSD", "side": "BUY", "lots": "0.10",
+            "midPrice": "1.08500", "reason": "Test opening a virtual position",
+        }, format="json")
+        self.assertEqual(opened.status_code, 201, opened.data)
+        position_id = opened.data["positionId"]
+        self.assertTrue(opened.data["simulatedOnly"])
+        self.assertEqual(ForexTrade.objects.filter(event_type="OPEN").count(), 1)
+        self.assertTrue(TrainingAuditEvent.objects.filter(action="FOREX_DEMO_OPEN").exists())
+
+        close_url = f"/api/users/training/accounts/{self.account.id}/forex/positions/{position_id}/close/"
+        closed = self.client.post(close_url, {
+            "midPrice": "1.08600", "reason": "Test closing a virtual position",
+        }, format="json")
+        self.assertEqual(closed.status_code, 200, closed.data)
+        position = ForexPosition.objects.get(pk=position_id)
+        self.assertEqual(position.status, "CLOSED")
+        self.assertEqual(ForexTrade.objects.filter(event_type="CLOSE").count(), 1)
+        self.assertTrue(TrainingAuditEvent.objects.filter(action="FOREX_DEMO_CLOSE").exists())
+        wallet = ForexDemoWallet.objects.get(account=self.account)
+        self.assertEqual(wallet.balance, Decimal("100008.00"))
+
+    def test_insufficient_margin_rejects_position(self):
+        self.trainee_user.initial_balance = Decimal("1.00")
+        self.trainee_user.buying_power = Decimal("1.00")
+        self.trainee_user.save(update_fields=["initial_balance", "buying_power"])
+        self.authenticate(self.manager)
+        response = self.client.post(self.open_url, {
+            "symbol": "EURUSD", "side": "BUY", "lots": "1.00",
+            "midPrice": "1.08500", "reason": "Must fail due to margin",
+        }, format="json")
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("Insufficient free margin", response.data["error"])
+        self.assertEqual(ForexPosition.objects.count(), 0)
