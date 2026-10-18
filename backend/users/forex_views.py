@@ -341,6 +341,17 @@ class ForexEditPositionView(APIView):
         close_price = position.close_price
         if position.status == "CLOSED":
             close_mid_value = data.get("closeMidPrice", data.get("closeMid", None))
+            pnl_inputs_changed = (
+                symbol != position.symbol
+                or side != position.side
+                or lots != position.lots
+                or entry_mid != position.entry_mid_price
+                or spread != position.spread_pips_at_open
+            )
+            if pnl_inputs_changed and close_mid_value is None:
+                return Response({
+                    "error": "Provide closeMidPrice when correcting symbol, side, lots, entry price or spread on a closed trade so realized P/L can be recalculated accurately."
+                }, status=400)
             if close_mid_value is not None:
                 try:
                     close_mid = _decimal(close_mid_value, "closeMidPrice")
