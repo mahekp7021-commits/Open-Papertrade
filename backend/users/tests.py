@@ -464,9 +464,16 @@ class TrainerCorrectionApiTests(TestCase):
         position = ForexPosition.objects.get(pk=position_id)
         self.assertEqual(position.status, "CLOSED")
         self.assertEqual(snapshot.data["riskStatus"], "STOP_OUT_THRESHOLD_REACHED")
-        self.assertTrue(ForexTrade.objects.filter(position=position, event_type="STOP_OUT").exists())
+        stop_out = ForexTrade.objects.get(position=position, event_type="STOP_OUT")
+        self.assertEqual(position.realized_pnl, Decimal("-1.00"))
+        self.assertEqual(stop_out.pnl, Decimal("-1.00"))
+        self.assertEqual(stop_out.details["midPrice"], "1.08500")
+        wallet = ForexDemoWallet.objects.get(account=self.account)
+        self.assertEqual(wallet.balance, Decimal("39.00"))
+        self.assertEqual(snapshot.data["balance"], "39.00")
         self.assertTrue(TrainingAuditEvent.objects.filter(
             account=self.account, action="FOREX_DEMO_STOP_OUT",
+            details__no_live_order=True,
         ).exists())
 
     def test_manager_can_edit_profile_balance_and_leverage(self):
