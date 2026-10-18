@@ -28,14 +28,14 @@ Do not call the demo production-ready or share it as a working live WebTrader un
 
 ## Hosted backend deployment starter (Render)
 
-A starter Render Blueprint is included at the repository root in `render.yaml`. It deploys only the Django API; it does not deploy the Next.js frontend or automatically provision a database.
+A starter Render Blueprint is included at the repository root in `render.yaml`. It defines separate Django API and Next.js web services; it does not automatically provision a PostgreSQL database.
 
-1. In Render, create a Blueprint from this repository and review the service settings before deploying.
+1. In Render, create a Blueprint from this repository and review both service settings before deploying. The example service hostnames in `render.yaml` must match the actual service names/hostnames.
 2. Set `DATABASE_URL` to a persistent PostgreSQL connection string (the Django settings require it when `DEBUG=False`). Keep the database credentials private.
-3. Set `CORS_ALLOWED_ORIGINS` to the exact browser origin(s) that will serve the frontend, comma-separated, with no trailing slash. For a GitHub Pages project site, verify the actual published origin first; the path is not part of the origin.
+3. Set `CORS_ALLOWED_ORIGINS` to the exact browser origin(s) that will serve the frontend, comma-separated, with no trailing slash. The starter value assumes `https://open-papertrade-web.onrender.com`; update it if the actual frontend hostname differs.
 4. Confirm `ALLOWED_HOSTS` matches the actual API hostname. If Render assigns a different service hostname, update it before relying on the deployment.
 5. Deploy and check `/api/` on the API hostname. Then create the manager account through a secure server-side/admin process; never commit credentials.
-6. Configure the frontend's browser API base URL to the deployed API origin plus `/api`. A GitHub Pages static export cannot run the Next.js server-side rewrite in `frontend-ui/next.config.ts`; the browser must call the API directly and the API must allow the frontend origin.
+6. The Render web service sets `NEXT_PUBLIC_API_URL` to the API origin plus `/api` and `BACKEND_URL` for server-side rewrites. If you use GitHub Pages instead, a static export cannot run the Next.js server-side rewrite; the browser must call the API directly and the API must allow the frontend origin.
 7. Test login, manager-only trainee account controls, virtual balance/leverage updates, simulated open/close, P/L, correction audit history and account isolation before sharing the demo.
 
 **Important:** this blueprint is a deployment starting point, not proof of a live service. A successful build does not mean the API/database is deployed. Use virtual funds and simulated orders only; do not add payment, bank, broker-login or real-order integrations.
