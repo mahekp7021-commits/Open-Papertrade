@@ -6,7 +6,7 @@ from rest_framework.test import APIClient
 from .forex_views import _decimal, _pnl
 from .models import (
     ForexDemoWallet, ForexPosition, ForexTrade, TrainingAccount,
-    TrainingAuditEvent, TrainerTradingConfig, UserProfile,
+    TrainingAuditEvent, TrainerTradingConfig, TeachingBoardTrade, UserProfile,
 )
 
 
@@ -279,3 +279,62 @@ class ForexApiIntegrationTests(TestCase):
         self.assertEqual(response.status_code, 400)
         self.assertIn("Insufficient free margin", response.data["error"])
         self.assertEqual(ForexPosition.objects.count(), 0)
+
+
+
+class TeachingBoardApiTests(TestCase):
+    def setUp(self):
+        self.client = APIClient()
+        self.manager = UserProfile.objects.create(
+            name="Board Manager", username="board-manager", email="board-manager@example.test",
+            is_admin=True, initial_balance=Decimal("100000.00"), buying_power=Decimal("100000.00"),
+        )
+        self.trainee = UserProfile.objects.create(
+            name="Board Trainee", username="board-trainee", email="board-trainee@example.test",
+            is_admin=False, initial_balance=Decimal("100000.00"), buying_power=Decimal("100000.00"),
+        )
+        self.account = TrainingAccount.objects.create(user=self.trainee, created_by=self.manager, role="TRAINEE")
+        self.list_url = f"/api/users/training/accounts/{self.account.id}/teaching-board/"
+
+    def test_manager_can_create_and_edit_classroom_example_without_touching_wallet(self):
+        self.client.force_authenticate(user=self.manager)
+        response = self.client.post(self.list_url, {
+            "symbol": "USD/JPY", "side": "BUY", "entryPrice": "150.25000",
+            "marginAmount": "500", "leverage": 100, "lots": "0.10",
+            "status": "EXAMPLE", "tradeTime": "2026-10-18T09:30:00Z",
+            "lessonTitle": "JPY entry lesson", "explanation": "Demonstrate entry timing.",
+        }, format="json")
+        self.assertEqual(response.status_code, 201, response.data)
+        card_id = response.data["id"]
+        card = TeachingBoardTrade.objects.get(pk=card_id)
+        self.assertEqual(card.symbol, "USDJPY")
+        self.assertFalse(ForexDemoWallet.objects.filter(account=self.account).exists())
+
+        response = self.client.patch(f"{self.list_url}{card_id}/", {
+            "symbol": "BTCUSD", "side": "SELL", "marginAmount": "750",
+            "tradeTime": "2026-10-17T14:15:00Z",
+        }, format="json")
+        self.assertEqual(response.status_code, 200, response.data)
+        card.refresh_from_db()
+        self.assertEqual(card.symbol, "BTCUSD")
+        self.assertEqual(card.side, "SELL")
+        self.assertEqual(card.margin_amount, Decimal("750"))
+        self.assertEqual(card.trade_time.isoformat(), "2026-10-17T14:15:00+00:00")
+        self.assertEqual(TrainingAuditEvent.objects.filter(account=self.account, action="TEACHING_CARD_CREATE").count(), 1)
+        self.assertEqual(TrainingAuditEvent.objects.filter(account=self.account, action="TEACHING_CARD_EDIT").count(), 1)
+        self.assertFalse(ForexDemoWallet.objects.filter(account=self.account).exists())
+
+    def test_non_manager_cannot_access_teaching_board(self):
+        self.client.force_authenticate(user=self.trainee)
+        response = self.client.get(self.list_url)
+        self.assertEqual(response.status_code, 403)
+
+    def test_teaching_board_rejects_invalid_side_and_negative_margin(self):
+        self.client.force_authenticate(user=self.manager)
+        for payload in (
+            {"symbol": "USDJPY", "side": "HOLD", "entryPrice": "150", "marginAmount": "50", "leverage": 100, "lots": "0.1"},
+            {"symbol": "USDJPY", "side": "BUY", "entryPrice": "150", "marginAmount": "-50", "leverage": 100, "lots": "0.1"},
+        ):
+            response = self.client.post(self.list_url, payload, format="json")
+            self.assertEqual(response.status_code, 400)
+        self.assertEqual(TeachingBoardTrade.objects.count(), 0)
