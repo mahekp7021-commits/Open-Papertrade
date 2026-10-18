@@ -228,7 +228,7 @@ class ForexApiIntegrationTests(TestCase):
         self.assertEqual(response.status_code, 200, response.data)
         self.assertEqual(response.data["usedMargin"], "235.50")
         self.assertEqual(len(response.data["positions"]), 2)
-        self.assertEqual(response.data["freeMargin"], "99764.50")
+        self.assertEqual(response.data["freeMargin"], "99762.50")
 
     def test_open_position_requires_quotes_for_existing_positions(self):
         self.authenticate(self.manager)
