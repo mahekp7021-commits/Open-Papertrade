@@ -473,6 +473,36 @@ class TrainerCorrectionApiTests(TestCase):
         self.assertEqual(ForexTrade.objects.filter(position_id=position_id, event_type="OPEN").count(), 1)
         self.assertEqual(ForexTrade.objects.filter(position_id=position_id, event_type="CLOSE").count(), 1)
 
+    def test_closed_at_only_correction_preserves_wallet_and_realized_pnl(self):
+        opened = self.client.post(self.open_url, {
+            "symbol": "EURUSD", "side": "BUY", "lots": "0.10",
+            "midPrice": "1.08500", "reason": "Open before close-time correction",
+        }, format="json")
+        self.assertEqual(opened.status_code, 201, opened.data)
+        position_id = opened.data["positionId"]
+        close_url = f"/api/users/training/accounts/{self.account.id}/forex/positions/{position_id}/close/"
+        closed = self.client.post(close_url, {
+            "midPrice": "1.08600", "reason": "Close before close-time correction",
+        }, format="json")
+        self.assertEqual(closed.status_code, 200, closed.data)
+
+        wallet_before = ForexDemoWallet.objects.get(account=self.account).balance
+        position_before = ForexPosition.objects.get(pk=position_id)
+        pnl_before = position_before.realized_pnl
+        edit_url = f"/api/users/training/accounts/{self.account.id}/forex/positions/{position_id}/edit/"
+        corrected = self.client.patch(edit_url, {
+            "closedAt": "2026-10-17T12:00:00Z",
+            "reason": "Correct closing timestamp only",
+        }, format="json")
+        self.assertEqual(corrected.status_code, 200, corrected.data)
+        position_after = ForexPosition.objects.get(pk=position_id)
+        self.assertEqual(position_after.realized_pnl, pnl_before)
+        self.assertEqual(ForexDemoWallet.objects.get(account=self.account).balance, wallet_before)
+        self.assertEqual(
+            position_after.closed_at.isoformat(),
+            "2026-10-17T12:00:00+00:00",
+        )
+
     def test_closed_trade_correction_reconciles_wallet_and_preserves_original_events(self):
         opened = self.client.post(self.open_url, {
             "symbol": "EURUSD", "side": "BUY", "lots": "0.10",
