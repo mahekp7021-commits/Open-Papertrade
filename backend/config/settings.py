@@ -166,7 +166,13 @@ JWT_COOKIE_ACCESS_PATH = '/api'
 JWT_COOKIE_REFRESH_PATH = '/api/auth'
 JWT_COOKIE_SAMESITE = 'Lax'
 
-CSRF_TRUSTED_ORIGINS = CORS_ALLOWED_ORIGINS
+CSRF_TRUSTED_ORIGINS = os.getenv(
+    'CSRF_TRUSTED_ORIGINS',
+    'https://open-papertrade-api.getvoroa.com,http://localhost:3000'
+).split(',')
+
+# Voroa terminates HTTPS at its proxy; let Django recognize the original scheme.
+SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
 
 # Stock API Settings
 FINNHUB_API_KEY = os.getenv('FINNHUB_API_KEY', '')
