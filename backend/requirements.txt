@@ -41,3 +41,4 @@ rank-bm25==0.2.2
 anthropic==0.44.0
 openai==1.59.9
 gunicorn==23.0.0
+whitenoise==6.11.0
