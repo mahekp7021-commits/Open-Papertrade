@@ -15,7 +15,10 @@ SECRET_KEY = os.getenv('SECRET_KEY', 'django-insecure-dev-key')
 
 DEBUG = os.getenv('DEBUG', 'True').lower() == 'true'
 
-ALLOWED_HOSTS = os.getenv('ALLOWED_HOSTS', 'localhost,127.0.0.1').split(',')
+ALLOWED_HOSTS = list(dict.fromkeys(
+    [host.strip() for host in os.getenv('ALLOWED_HOSTS', '').split(',') if host.strip()]
+    + ['open-papertrade-api.getvoroa.com', 'localhost', '127.0.0.1']
+))
 
 INSTALLED_APPS = [
     'unfold',
